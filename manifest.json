@@ -1,14 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Ozon CRM Мега-помощник",
-  "version": "10.6",
-  "description": "Автоприветствие, перефразирование, ИИ-шаблоны",
-  "permissions": ["storage", "clipboardWrite"],
-  "host_permissions": ["https://crm.o3team.ru/*"],
+  "version": "10.7",
+  "description": "Автообновление через Service Worker",
+  "permissions": [
+    "storage",
+    "clipboardWrite",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://crm.o3team.ru/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "sw.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://crm.o3team.ru/*"],
-      "js": ["config.js", "content.js"],
+      "js": ["content.js"],
       "run_at": "document_end"
     }
   ],
