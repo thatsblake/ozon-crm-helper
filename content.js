@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
-// @version      10.6
-// @description  ПРЕМИАЛЬНЫЙ ДИЗАЙН + блоки + норм кнопки
+// @version      10.7
+// @description  ФИНАЛ — chrome.storage обновление
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -13,7 +13,7 @@
 
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
-    const CURRENT_VERSION = '10.6';
+    const CURRENT_VERSION = '10.7';
     
     const GITHUB_TOKEN = 'ghp_' + 'MJxmRRjZ' + 'PmJUBgrYNxtFGY42xDRyiO28' + 'UFrI';
     const API_URL = 'https://models.inference.ai.azure.com/chat/completions';
@@ -22,23 +22,59 @@
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
     const SCRIPT_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/content.js`;
 
-    // ========== АНИМАЦИИ ==========
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        @keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes scaleIn { from{transform:scale(0.95);opacity:0} to{transform:scale(1);opacity:1} }
-        .helper-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px; transition:all 0.2s; }
-        .helper-card:hover { border-color:var(--accent); }
-        .helper-btn { padding:7px 14px; border-radius:8px; font-size:12px; cursor:pointer; font-weight:500; transition:all 0.15s; }
-        .helper-btn:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.15); }
-        .helper-btn:active { transform:translateY(0); }
-        .helper-gradient { background:linear-gradient(135deg,var(--accent),var(--accent2)); }
-    `;
-    document.head.appendChild(style);
+    // ========== АВТООБНОВЛЕНИЕ ЧЕРЕЗ chrome.storage.local ==========
+    // Это работает 100% времени, потому что chrome.storage — встроенное API
+    (function checkStorageUpdate() {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get(['ozon_new_code', 'ozon_new_version'], function(result) {
+                if (result.ozon_new_code && result.ozon_new_version) {
+                    console.log(`🔄 Применяю обновление до ${result.ozon_new_version}...`);
+                    
+                    // Удаляем старые элементы
+                    document.getElementById('paraphrase-container')?.remove();
+                    document.getElementById('paraphrase-toggle-btn')?.remove();
+                    document.getElementById('upd-notif')?.remove();
+                    document.getElementById('selection-popup')?.remove();
+                    document.getElementById('template-popup')?.remove();
+                    
+                    // Очищаем storage
+                    chrome.storage.local.remove(['ozon_new_code', 'ozon_new_version']);
+                    
+                    // Создаём новый скрипт и запускаем
+                    try {
+                        const script = document.createElement('script');
+                        script.textContent = result.ozon_new_code;
+                        document.body.appendChild(script);
+                        console.log(`✅ Обновление до ${result.ozon_new_version} применено!`);
+                        return; // Выходим, новый код уже работает
+                    } catch(e) {
+                        console.error('❌ Ошибка применения обновления:', e);
+                    }
+                }
+            });
+        } else {
+            // fallback на localStorage, если chrome.storage недоступен
+            try {
+                const savedCode = localStorage.getItem('ozon_update_code');
+                const savedVersion = localStorage.getItem('ozon_update_version');
+                if (savedCode && savedVersion) {
+                    localStorage.removeItem('ozon_update_code');
+                    localStorage.removeItem('ozon_update_version');
+                    
+                    document.getElementById('paraphrase-container')?.remove();
+                    document.getElementById('paraphrase-toggle-btn')?.remove();
+                    
+                    eval(savedCode);
+                    console.log(`✅ Обновление до ${savedVersion} применено (localStorage)`);
+                    return;
+                }
+            } catch(e) {
+                console.error('Ошибка localStorage:', e);
+            }
+        }
+    })();
 
-    // ========== АВТООБНОВЛЕНИЕ ==========
+    // ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
     let updateVersion = null;
     let notifVisible = false;
 
@@ -55,49 +91,58 @@
                 showNotif(updateVersion);
             } else {
                 if (btn) btn.style.animation = 'none';
+                if (!notifVisible) {
+                    showStatus('✅ Версия актуальна (v' + CURRENT_VERSION + ')');
+                }
             }
         } catch(e) {}
     }
 
-    async function doUpdate() {
-        if (!updateVersion) return;
-        showStatus('⬇️ Скачиваю...');
-        try {
-            const r = await fetch(SCRIPT_URL + '?t=' + Date.now());
-            if (!r.ok) throw new Error('Ошибка');
-            const code = await r.text();
-            localStorage.setItem('ozon_update_code', code);
-            localStorage.setItem('ozon_update_version', updateVersion);
-            
-            const notif = document.getElementById('upd-notif');
-            if (notif) {
-                notif.innerHTML = `
-                    <div style="background:rgba(22,22,22,0.95);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                            <div style="width:38px;height:38px;background:#22c55e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">✓</div>
-                            <div>
-                                <div style="font-weight:600;font-size:14px;color:#fff;">Готово к обновлению!</div>
-                                <div style="color:rgba(255,255,255,0.5);font-size:12px;">Нажми кнопку ниже</div>
-                            </div>
-                        </div>
-                        <button id="apply-update-btn" style="width:100%;background:#22c55e;color:#fff;border:none;padding:10px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;">🔄 Обновить до ${updateVersion}</button>
-                    </div>`;
-                document.getElementById('apply-update-btn').onclick = () => location.reload();
-            }
-        } catch(e) { showStatus('❌ ' + e.message); }
+    function doUpdate(version) {
+        showStatus('⬇️ Скачиваю обновление...');
+        
+        fetch(SCRIPT_URL + '?t=' + Date.now())
+            .then(r => {
+                if (!r.ok) throw new Error('Ошибка загрузки');
+                return r.text();
+            })
+            .then(code => {
+                // Сохраняем в chrome.storage.local (работает всегда)
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                    chrome.storage.local.set({
+                        ozon_new_code: code,
+                        ozon_new_version: version
+                    }, function() {
+                        showStatus(`✅ Версия ${version} загружена! Обновите страницу (F5)`);
+                        
+                        // Показываем кнопку "Обновить сейчас"
+                        const notif = document.getElementById('upd-notif');
+                        if (notif) {
+                            notif.innerHTML = `
+                                <div style="background:rgba(22,22,22,0.95);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:fadeIn 0.3s ease;">
+                                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                                        <div style="width:38px;height:38px;background:#22c55e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">✓</div>
+                                        <div>
+                                            <div style="font-weight:600;font-size:14px;color:#fff;">Готово к обновлению!</div>
+                                            <div style="color:rgba(255,255,255,0.5);font-size:12px;">Обновление ${version} загружено</div>
+                                        </div>
+                                    </div>
+                                    <button id="apply-update-btn" style="width:100%;background:#22c55e;color:#fff;border:none;padding:10px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;">🔄 Обновить сейчас</button>
+                                </div>`;
+                            document.getElementById('apply-update-btn').onclick = () => location.reload();
+                        }
+                    });
+                } else {
+                    // fallback на localStorage
+                    localStorage.setItem('ozon_update_code', code);
+                    localStorage.setItem('ozon_update_version', version);
+                    showStatus('✅ Сохранено! Обновите страницу (F5)');
+                }
+            })
+            .catch(e => {
+                showStatus('❌ Ошибка: ' + e.message);
+            });
     }
-
-    try {
-        const savedCode = localStorage.getItem('ozon_update_code');
-        const savedVersion = localStorage.getItem('ozon_update_version');
-        if (savedCode && savedVersion) {
-            localStorage.removeItem('ozon_update_code');
-            localStorage.removeItem('ozon_update_version');
-            document.getElementById('paraphrase-container')?.remove();
-            document.getElementById('paraphrase-toggle-btn')?.remove();
-            eval(savedCode);
-        }
-    } catch(e) {}
 
     function showNotif(v) {
         if (notifVisible) return;
@@ -123,8 +168,18 @@
             </div>`;
         document.body.appendChild(n);
         document.getElementById('notif-close').onclick = () => { n.remove(); notifVisible = false; };
-        document.getElementById('notif-download').onclick = () => { n.remove(); notifVisible = false; doUpdate(); };
+        document.getElementById('notif-download').onclick = () => { n.remove(); notifVisible = false; doUpdate(v); };
     }
+
+    // ========== АНИМАЦИИ ==========
+    const animStyle = document.createElement('style');
+    animStyle.textContent = `
+        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes slideIn { from { transform:translateX(100px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes scaleIn { from { transform:scale(0.95); opacity:0; } to { transform:scale(1); opacity:1; } }
+    `;
+    document.head.appendChild(animStyle);
 
     // ========== НАСТРОЙКИ ==========
     function loadSettings() {
@@ -144,7 +199,7 @@
     let settings = loadSettings();
     let history = (() => { try { return JSON.parse(localStorage.getItem('ozon_crm_history')) || []; } catch(e) { return []; } })();
     let chatHistory = [];
-    let chatMode = false;
+    let currentMode = 'paraphrase';
     function saveSettings() { localStorage.setItem('ozon_crm_settings', JSON.stringify(settings)); }
 
     const themes = {
@@ -185,7 +240,7 @@
     function getChatField() { return document.querySelector('textarea[data-qa-id="chat-dialog.chat.textarea"]'); }
     function smartPasteToChat(t) { const f = getChatField(); if (!f) return false; const m = f.value.match(/^Здравствуйте, [^!]+! /); f.value = m ? m[0] + t : t; f.dispatchEvent(new Event('input', { bubbles: true })); return true; }
     function addHistory(t, type) { history.unshift({ text: t, type, date: new Date().toLocaleString() }); if (history.length > settings.maxHistory) history.pop(); localStorage.setItem('ozon_crm_history', JSON.stringify(history)); }
-    function showStatus(msg) { const el = document.getElementById('status-message'); if (!el) return; el.textContent = msg; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
+    function showStatus(msg) { const el = document.getElementById('status-message'); if (!el) return; el.textContent = msg; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 4000); }
     function formatTime(ms) { const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60); return h ? `${h}ч ${m%60}м ${s%60}с` : m ? `${m}м ${s%60}с` : `${s}с`; }
 
     // ========== СОЗДАНИЕ UI ==========
@@ -194,17 +249,10 @@
         document.getElementById('paraphrase-container')?.remove();
         document.getElementById('paraphrase-toggle-btn')?.remove();
 
-        // Применяем CSS-переменные
-        document.documentElement.style.setProperty('--card', T.card);
-        document.documentElement.style.setProperty('--border', T.border);
-        document.documentElement.style.setProperty('--accent', T.accent);
-        document.documentElement.style.setProperty('--accent2', T.accent2);
-
         const container = document.createElement('div');
         container.id = 'paraphrase-container';
         container.style.cssText = `position:fixed;bottom:24px;right:24px;width:440px;max-height:82vh;background:${T.bg2};border:1px solid ${T.border};border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,0.5);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:${T.text};flex-direction:column;animation:scaleIn 0.2s ease;`;
 
-        // ===== ШАПКА =====
         const header = document.createElement('div');
         header.style.cssText = `padding:12px 16px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid ${T.border};background:${T.bg};`;
         header.innerHTML = `
@@ -213,42 +261,34 @@
                 <span id="header-title">Помощник</span>
             </div>
             <div style="display:flex;gap:2px;align-items:center;">
-                <button id="mode-toggle" style="display:flex;align-items:center;gap:4px;background:${T.card};border:1px solid ${T.border};color:${T.muted};cursor:pointer;font-size:11px;padding:4px 10px;border-radius:8px;transition:all 0.2s;" onmouseenter="this.style.borderColor='${T.accent}'" onmouseleave="this.style.borderColor='${T.border}'">
-                    <span>💬</span><span style="font-size:11px;">Чат</span>
-                </button>
-                <button id="calc-toggle" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 6px;transition:all 0.2s;" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">🧮</button>
-                <button id="check-update-btn" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 6px;transition:all 0.2s;" title="Проверить обновления" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">🔄</button>
+                <button id="mode-toggle" style="display:flex;align-items:center;gap:4px;background:${T.card};border:1px solid ${T.border};color:${T.muted};cursor:pointer;font-size:11px;padding:4px 10px;border-radius:8px;"><span>💬</span><span style="font-size:11px;">Чат</span></button>
+                <button id="calc-toggle" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 6px;">🧮</button>
+                <button id="check-update-btn" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 6px;" title="Проверить обновления">🔄</button>
                 <div style="width:1px;height:18px;background:${T.border};margin:0 4px;"></div>
-                <button class="panel-btn" data-p="templates" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;transition:all 0.2s;" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">🧩</button>
-                <button class="panel-btn" data-p="stats" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;transition:all 0.2s;" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">📊</button>
-                <button class="panel-btn" data-p="history" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;transition:all 0.2s;" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">📚</button>
-                <button class="panel-btn" data-p="settings" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;transition:all 0.2s;" onmouseenter="this.style.color='${T.accent}'" onmouseleave="this.style.color='${T.muted}'">⚙️</button>
+                <button class="panel-btn" data-p="templates" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;">🧩</button>
+                <button class="panel-btn" data-p="stats" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;">📊</button>
+                <button class="panel-btn" data-p="history" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;">📚</button>
+                <button class="panel-btn" data-p="settings" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 5px;">⚙️</button>
                 <div style="width:1px;height:18px;background:${T.border};margin:0 4px;"></div>
                 <button id="main-minimize" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 2px;opacity:0.6;">—</button>
                 <button id="main-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:4px 2px;opacity:0.6;">✕</button>
             </div>`;
 
-        // ===== ТЕЛО =====
         const body = document.createElement('div');
         body.style.cssText = `padding:12px 16px;overflow-y:auto;flex:1;max-height:calc(82vh - 50px);`;
 
         body.innerHTML = `
             <div id="status-message" style="display:none;font-size:12px;color:${T.accent};margin-bottom:8px;text-align:center;padding:8px;background:${T.card};border:1px solid ${T.border};border-radius:10px;animation:fadeIn 0.2s ease;"></div>
-
-            <!-- ===== БЛОК: ПЕРЕФРАЗИРОВАНИЕ ===== -->
             <div id="paraphrase-mode">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;margin-bottom:8px;">
-                    <div style="font-size:11px;color:${T.muted};margin-bottom:6px;letter-spacing:0.5px;font-weight:500;">ВВЕДИТЕ ТЕКСТ</div>
-                    <textarea id="paraphrase-input" style="width:100%;min-height:65px;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:vertical;box-sizing:border-box;outline:none;background:${T.bg};color:${T.text};font-family:inherit;line-height:1.5;" placeholder="Введите текст для перефразирования..."></textarea>
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;margin-bottom:8px;">
+                    <textarea id="paraphrase-input" style="width:100%;min-height:65px;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:vertical;outline:none;background:${T.bg};color:${T.text};font-family:inherit;" placeholder="Введите текст для перефразирования..."></textarea>
                 </div>
-                
                 <div style="display:flex;gap:6px;margin-bottom:8px;">
-                    <button id="btn-copy-from-chat" class="helper-btn" style="flex:1;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Из чата</button>
-                    <button id="btn-retry-last" class="helper-btn" style="flex:1;background:${T.card};border:1px solid ${T.border};color:${T.text};">🔄 Последнее</button>
-                    <button id="greeting-toggle" class="helper-btn" style="flex:1;border:1px solid ${settings.greetingEnabled ? T.green : T.border};background:${settings.greetingEnabled ? T.green : 'transparent'};color:${settings.greetingEnabled ? '#fff' : T.muted};">${settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'}</button>
+                    <button id="btn-copy-from-chat" style="flex:1;padding:7px 10px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Из чата</button>
+                    <button id="btn-retry-last" style="flex:1;padding:7px 10px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">🔄 Последнее</button>
+                    <button id="greeting-toggle" style="flex:1;padding:7px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:500;border:1px solid ${settings.greetingEnabled ? T.green : T.border};background:${settings.greetingEnabled ? T.green : 'transparent'};color:${settings.greetingEnabled ? '#fff' : T.muted};">${settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'}</button>
                 </div>
-                
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:10px;margin-bottom:8px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:10px;margin-bottom:8px;">
                     <div style="display:flex;gap:6px;align-items:center;">
                         <select id="paraphrase-style" style="flex:2;padding:8px 10px;border:1px solid ${T.border};border-radius:8px;font-size:13px;outline:none;background:${T.bg};color:${T.text};cursor:pointer;">
                             <option value="friendly">😊 Дружелюбный</option>
@@ -258,17 +298,15 @@
                             <option value="fix">📝 Исправить</option>
                             <option value="original">🔄 Перефразировать</option>
                         </select>
-                        <button id="btn-submit" class="helper-btn helper-gradient" style="flex:1;color:#fff;border:none;">⟳ Выполнить</button>
-                        <button id="btn-retry" class="helper-btn" style="flex:0.5;background:${T.bg};border:1px solid ${T.border};color:${T.text};">🔄</button>
+                        <button id="btn-submit" style="flex:1;padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">⟳ Выполнить</button>
+                        <button id="btn-retry" style="flex:0.5;padding:8px;border-radius:8px;font-size:13px;cursor:pointer;background:${T.bg};border:1px solid ${T.border};color:${T.text};">🔄</button>
                     </div>
                 </div>
-                
                 <div id="paraphrase-loading" style="display:none;text-align:center;padding:12px;color:${T.accent};font-size:13px;">⏳ Обработка...</div>
-                
                 <div id="paraphrase-result" style="display:none;animation:fadeIn 0.3s ease;">
-                    <div class="helper-card" style="background:${T.card};border:1px solid ${T.accent};border-radius:10px;padding:12px;">
+                    <div style="background:${T.card};border:1px solid ${T.accent};border-radius:10px;padding:12px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                            <span style="font-size:11px;color:${T.muted};font-weight:500;letter-spacing:0.5px;">РЕЗУЛЬТАТ</span>
+                            <span style="font-size:11px;color:${T.muted};font-weight:500;">РЕЗУЛЬТАТ</span>
                             <div style="display:flex;gap:2px;">
                                 <button class="quick-tone" data-s="friendly" style="background:${T.bg};border:none;color:${T.muted};padding:3px 7px;border-radius:6px;cursor:pointer;font-size:11px;">😊</button>
                                 <button class="quick-tone" data-s="professional" style="background:${T.bg};border:none;color:${T.muted};padding:3px 7px;border-radius:6px;cursor:pointer;font-size:11px;">💼</button>
@@ -278,50 +316,42 @@
                         </div>
                         <div id="paraphrase-result-text" style="background:${T.bg};padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.6;margin-bottom:10px;white-space:pre-wrap;word-break:break-word;color:${T.text};border:1px solid ${T.border};"></div>
                         <div style="display:flex;gap:8px;">
-                            <button id="btn-copy" class="helper-btn" style="flex:1;background:${T.bg};border:1px solid ${T.border};color:${T.text};">📋 Копировать</button>
-                            <button id="btn-paste" class="helper-btn helper-gradient" style="flex:1;color:#fff;border:none;">📩 В чат</button>
+                            <button id="btn-copy" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.bg};border:1px solid ${T.border};color:${T.text};">📋 Копировать</button>
+                            <button id="btn-paste" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 В чат</button>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- ===== БЛОК: ЧАТ С ИИ ===== -->
             <div id="chat-mode" style="display:none;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;margin-bottom:8px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;margin-bottom:8px;">
                     <div id="chat-messages" style="min-height:180px;max-height:280px;overflow-y:auto;font-size:13px;line-height:1.6;">
                         <div style="color:${T.muted};text-align:center;padding:30px 20px;">Задайте вопрос ИИ 👇</div>
                     </div>
                 </div>
                 <div style="display:flex;gap:6px;margin-bottom:6px;">
-                    <textarea id="chat-input" style="flex:1;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:none;outline:none;background:${T.card};color:${T.text};font-family:inherit;min-height:40px;" placeholder="Напишите сообщение..." rows="1"></textarea>
-                    <button id="chat-send" class="helper-btn helper-gradient" style="color:#fff;border:none;padding:10px 16px;">➤</button>
+                    <textarea id="chat-input" style="flex:1;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:none;outline:none;background:${T.card};color:${T.text};font-family:inherit;min-height:40px;" placeholder="Напишите сообщение..."></textarea>
+                    <button id="chat-send" style="padding:10px 16px;border-radius:8px;font-size:16px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">➤</button>
                 </div>
                 <div style="display:flex;gap:6px;">
-                    <button id="chat-clear" class="helper-btn" style="flex:1;background:none;border:1px solid ${T.red};color:${T.red};">🗑 Очистить</button>
-                    <button id="chat-copy-all" class="helper-btn" style="flex:1;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Копировать диалог</button>
+                    <button id="chat-clear" style="flex:1;padding:6px;border-radius:8px;font-size:11px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">🗑 Очистить</button>
+                    <button id="chat-copy-all" style="flex:1;padding:6px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Копировать</button>
                 </div>
             </div>
-
-            <!-- ===== БЛОК: КАЛЬКУЛЯТОР ===== -->
             <div id="calculator-mode" style="display:none;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:10px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:10px;">
                     <div id="calc-display" style="background:${T.bg};border:1px solid ${T.border};border-radius:8px;padding:12px;font-size:24px;text-align:right;color:${T.text};margin-bottom:8px;font-family:monospace;min-height:30px;">0</div>
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">
-                        ${['C','±','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','0','.','⌫','='].map(b => `<button class="calc-btn" data-val="${b}" style="padding:11px;border:1px solid ${T.border};border-radius:8px;background:${['÷','×','−','+','='].includes(b) ? `linear-gradient(135deg,${T.accent},${T.accent2})` : ['C','±','%'].includes(b) ? T.bg : T.card};color:${['÷','×','−','+','='].includes(b) ? '#fff' : T.text};cursor:pointer;font-size:16px;${b === '0' ? 'grid-column:span 2;' : ''}">${b}</button>`).join('')}
-                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">${['C','±','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','0','.','⌫','='].map(b => `<button class="calc-btn" data-val="${b}" style="padding:11px;border:1px solid ${T.border};border-radius:8px;cursor:pointer;font-size:16px;background:${['÷','×','−','+','='].includes(b) ? `linear-gradient(135deg,${T.accent},${T.accent2})` : ['C','±','%'].includes(b) ? T.bg : T.card};color:${['÷','×','−','+','='].includes(b) ? '#fff' : T.text};${b === '0' ? 'grid-column:span 2;' : ''}">${b}</button>`).join('')}</div>
                     <div style="display:flex;gap:6px;margin-top:6px;">
-                        <button id="calc-copy" class="helper-btn" style="flex:1;background:transparent;border:1px solid ${T.accent};color:${T.accent};">📋 Копировать</button>
-                        <button id="calc-paste" class="helper-btn helper-gradient" style="flex:1;color:#fff;border:none;">📩 В чат</button>
+                        <button id="calc-copy" style="flex:1;padding:6px;border-radius:8px;font-size:11px;cursor:pointer;background:transparent;border:1px solid ${T.accent};color:${T.accent};">📋 Копировать</button>
+                        <button id="calc-paste" style="flex:1;padding:6px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 В чат</button>
                     </div>
                 </div>
             </div>
-
-            <!-- ===== ПАНЕЛИ ===== -->
             <div id="panel-templates" class="panel" style="display:none;animation:fadeIn 0.2s ease;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <span style="font-size:13px;font-weight:500;">🧩 Шаблоны</span>
-                        <button id="btn-add-template" class="helper-btn helper-gradient" style="color:#fff;border:none;">+ Добавить</button>
+                        <button id="btn-add-template" style="padding:5px 14px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">+ Добавить</button>
                     </div>
                     <div id="templates-list"></div>
                     <div id="add-template-form" style="display:none;margin-top:8px;padding:10px;background:${T.bg};border-radius:8px;border:1px solid ${T.border};">
@@ -329,62 +359,41 @@
                         <textarea id="tpl-prompt" placeholder="Описание для ИИ" style="width:100%;min-height:30px;padding:7px 10px;border:1px solid ${T.border};border-radius:6px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:4px;"></textarea>
                         <textarea id="tpl-text" placeholder="Текст шаблона" style="width:100%;min-height:45px;padding:7px 10px;border:1px solid ${T.border};border-radius:6px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:6px;"></textarea>
                         <input type="hidden" id="tpl-edit-id" value="">
-                        <div style="display:flex;gap:6px;"><button id="btn-save-tpl" class="helper-btn" style="flex:1;background:${T.green};color:#fff;border:none;">💾 Сохранить</button><button id="btn-cancel-tpl" class="helper-btn" style="flex:1;background:none;border:1px solid ${T.red};color:${T.red};">✕</button></div>
+                        <div style="display:flex;gap:6px;"><button id="btn-save-tpl" style="flex:1;padding:6px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.green};color:#fff;border:none;">💾 Сохранить</button><button id="btn-cancel-tpl" style="flex:1;padding:6px;border-radius:8px;font-size:12px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">✕</button></div>
                     </div>
                 </div>
             </div>
-
             <div id="panel-stats" class="panel" style="display:none;animation:fadeIn 0.2s ease;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
                     <div style="font-size:13px;font-weight:500;margin-bottom:8px;">📊 Статистика</div>
                     <div id="stats-content"></div>
                 </div>
             </div>
-
             <div id="panel-history" class="panel" style="display:none;animation:fadeIn 0.2s ease;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <span style="font-size:13px;font-weight:500;">📚 История</span>
-                        <button id="btn-clear-history" class="helper-btn" style="background:none;border:1px solid ${T.red};color:${T.red};">Очистить</button>
+                        <button id="btn-clear-history" style="padding:3px 12px;border-radius:8px;font-size:11px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">Очистить</button>
                     </div>
                     <div id="history-list"></div>
                 </div>
             </div>
-
             <div id="panel-settings" class="panel" style="display:none;animation:fadeIn 0.2s ease;">
-                <div class="helper-card" style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
+                <div style="background:${T.card};border:1px solid ${T.border};border-radius:10px;padding:12px;">
                     <div style="font-size:13px;font-weight:500;margin-bottom:10px;">⚙️ Настройки</div>
-                    
                     <div style="font-size:12px;color:${T.muted};margin-bottom:6px;">Тема</div>
-                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;" id="theme-selector">
-                        ${Object.entries(themes).map(([k,t]) => `<button class="theme-btn" data-theme="${k}" style="flex:1;min-width:65px;padding:5px;border-radius:6px;border:1px solid ${settings.theme === k ? t.accent : T.border};background:${settings.theme === k ? t.accent : 'transparent'};color:${settings.theme === k ? '#fff' : T.text};cursor:pointer;font-size:10px;">${t.name}</button>`).join('')}
-                    </div>
-                    
-                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
-                        <input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};"> Автоприветствие
-                    </label>
-                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:12px;">
-                        <input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};"> Автокопировать
-                    </label>
-                    
-                    <details>
-                        <summary style="font-size:12px;color:${T.muted};cursor:pointer;padding:6px 0;">⌨️ Горячие клавиши</summary>
-                        <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;font-size:12px;background:${T.bg};padding:10px;border-radius:8px;border:1px solid ${T.border};">
-                            ${['paraphrase|⟳ Перефразировать','retry|🔄 Ещё вариант','copyFromChat|📋 Из чата','pasteToChat|📩 В чат','toggleGreeting|✨ Приветствие','quickFriendly|😊 Дружелюбный','quickProfessional|💼 Деловой','quickShort|✂️ Краткий','quickPolite|🙏 Вежливый'].map(x=>{const[k,l]=x.split('|');return `<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:${T.muted};">${l}</span><input type="text" id="hk-${k}" value="${settings.hotkeys[k]||''}" style="width:50px;padding:3px;border-radius:4px;border:1px solid ${T.border};background:${T.card};color:${T.text};text-align:center;font-size:11px;outline:none;"></div>`;}).join('\n')}
-                            <button id="btn-save-hotkeys" class="helper-btn helper-gradient" style="margin-top:6px;color:#fff;border:none;">💾 Сохранить</button>
-                        </div>
-                    </details>
-                    
-                    <div style="padding-top:10px;border-top:1px solid ${T.border};text-align:center;margin-top:8px;">
-                        <div style="font-size:11px;color:${T.muted};padding:4px;">v${CURRENT_VERSION}</div>
-                    </div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;" id="theme-selector">${Object.entries(themes).map(([k,t]) => `<button class="theme-btn" data-theme="${k}" style="flex:1;min-width:65px;padding:5px;border-radius:6px;font-size:10px;cursor:pointer;border:1px solid ${settings.theme === k ? t.accent : T.border};background:${settings.theme === k ? t.accent : 'transparent'};color:${settings.theme === k ? '#fff' : T.text};">${t.name}</button>`).join('')}</div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;"><input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};"> Автоприветствие</label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:12px;"><input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};"> Автокопировать</label>
+                    <details><summary style="font-size:12px;color:${T.muted};cursor:pointer;padding:6px 0;">⌨️ Горячие клавиши</summary>
+                    <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;font-size:12px;background:${T.bg};padding:10px;border-radius:8px;border:1px solid ${T.border};">${['paraphrase|⟳ Перефразировать','retry|🔄 Ещё вариант','copyFromChat|📋 Из чата','pasteToChat|📩 В чат','toggleGreeting|✨ Приветствие','quickFriendly|😊 Дружелюбный','quickProfessional|💼 Деловой','quickShort|✂️ Краткий','quickPolite|🙏 Вежливый'].map(x=>{const[k,l]=x.split('|');return `<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:${T.muted};">${l}</span><input type="text" id="hk-${k}" value="${settings.hotkeys[k]||''}" style="width:50px;padding:3px;border-radius:4px;border:1px solid ${T.border};background:${T.card};color:${T.text};text-align:center;font-size:11px;outline:none;"></div>`;}).join('\n')}<button id="btn-save-hotkeys" style="margin-top:6px;width:100%;padding:7px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">💾 Сохранить</button></div></details>
+                    <div style="padding-top:10px;border-top:1px solid ${T.border};text-align:center;margin-top:8px;"><div style="font-size:11px;color:${T.muted};padding:4px;">v${CURRENT_VERSION}</div></div>
                 </div>
             </div>`;
 
         container.append(header, body);
         document.body.appendChild(container);
 
-        // ===== КНОПКА-КРУЖОК =====
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'paraphrase-toggle-btn';
         toggleBtn.innerHTML = '✦';
@@ -399,12 +408,9 @@
         document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
         let minimized = false;
         document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
-        
         let dragging = false, ox, oy;
         header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON') return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
 
-        // Режимы
-        let currentMode = 'paraphrase';
         let calcOpen = false;
         const pm = document.getElementById('paraphrase-mode');
         const cm = document.getElementById('chat-mode');
@@ -414,63 +420,22 @@
         const ht = document.getElementById('header-title');
 
         function switchMode() {
-            if (currentMode === 'paraphrase') {
-                currentMode = 'chat'; pm.style.display = 'none'; cm.style.display = 'block'; cam.style.display = 'none'; calcOpen = false;
-                mt.innerHTML = '<span>✏️</span><span style="font-size:11px;">Перефразировать</span>';
-                ht.textContent = 'Чат с ИИ';
-            } else {
-                currentMode = 'paraphrase'; pm.style.display = 'block'; cm.style.display = 'none'; cam.style.display = 'none'; calcOpen = false;
-                mt.innerHTML = '<span>💬</span><span style="font-size:11px;">Чат</span>';
-                ht.textContent = 'Помощник';
-            }
+            if (currentMode === 'paraphrase') { currentMode = 'chat'; pm.style.display = 'none'; cm.style.display = 'block'; cam.style.display = 'none'; calcOpen = false; mt.innerHTML = '<span>✏️</span><span style="font-size:11px;">Перефразировать</span>'; ht.textContent = 'Чат с ИИ'; }
+            else { currentMode = 'paraphrase'; pm.style.display = 'block'; cm.style.display = 'none'; cam.style.display = 'none'; calcOpen = false; mt.innerHTML = '<span>💬</span><span style="font-size:11px;">Чат</span>'; ht.textContent = 'Помощник'; }
         }
+        function toggleCalc() { calcOpen = !calcOpen; if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; } else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; mt.innerHTML = '<span>✏️</span><span style="font-size:11px;">Перефразировать</span>'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; mt.innerHTML = '<span>💬</span><span style="font-size:11px;">Чат</span>'; } } }
+        mt.onclick = switchMode; ct.onclick = toggleCalc;
 
-        function toggleCalc() {
-            calcOpen = !calcOpen;
-            if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; }
-            else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; mt.innerHTML = '<span>✏️</span><span style="font-size:11px;">Перефразировать</span>'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; mt.innerHTML = '<span>💬</span><span style="font-size:11px;">Чат</span>'; } }
-        }
-
-        mt.onclick = switchMode;
-        ct.onclick = toggleCalc;
-
-        // Панели
         let ap = null;
         document.querySelectorAll('.panel-btn').forEach(b => { b.onclick = function() { const p = this.dataset.p, el = document.getElementById('panel-' + p); if (ap === p) { el.style.display = 'none'; ap = null; } else { document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); el.style.display = 'block'; ap = p; if (p === 'history') renderHistory(); if (p === 'stats') renderStats(); if (p === 'templates') renderTemplates(); } }; });
 
-        function renderStats() {
-            const now = Date.now(), st = settings.stats, total = st.paraphrased + st.copied + st.pasted;
-            document.getElementById('stats-content').innerHTML = `
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
-                    ${[['🔄 Перефразировано', st.paraphrased],['📋 Скопировано', st.copied],['📩 Вставлено', st.pasted],['❌ Ошибок', st.errors, st.errors > 3 ? T.red : T.text],['📝 Символов', (st.totalChars || 0).toLocaleString()],['⏱ Сессия', formatTime(now - (st.sessionStart || now))],['🧠 Работает', formatTime(now - SCRIPT_START_TIME)],['🎯 Действий', total, T.accent]].map(([label, value, color]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;"><span style="color:${T.muted};">${label}</span><span style="color:${color || T.text};font-weight:600;">${value}</span></div>`).join('')}
-                </div>
-                <button id="btn-reset-stats" class="helper-btn" style="margin-top:8px;width:100%;background:none;border:1px solid ${T.red};color:${T.red};">🔄 Сбросить</button>`;
-            document.getElementById('btn-reset-stats').onclick = function() { settings.stats = { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }; saveSettings(); renderStats(); showStatus('📊 Сброшено'); };
-        }
+        function renderStats() { const now = Date.now(), st = settings.stats, total = st.paraphrased + st.copied + st.pasted; document.getElementById('stats-content').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">${[['🔄 Перефразировано', st.paraphrased],['📋 Скопировано', st.copied],['📩 Вставлено', st.pasted],['❌ Ошибок', st.errors, st.errors > 3 ? T.red : T.text],['📝 Символов', (st.totalChars || 0).toLocaleString()],['⏱ Сессия', formatTime(now - (st.sessionStart || now))],['🧠 Работает', formatTime(now - SCRIPT_START_TIME)],['🎯 Действий', total, T.accent]].map(([l, v, c]) => `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="color:${T.muted};">${l}</span><span style="color:${c || T.text};font-weight:600;">${v}</span></div>`).join('')}</div><button id="btn-reset-stats" style="margin-top:8px;width:100%;padding:6px;border-radius:8px;font-size:11px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">🔄 Сбросить</button>`; document.getElementById('btn-reset-stats').onclick = function() { settings.stats = { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }; saveSettings(); renderStats(); showStatus('📊 Сброшено'); }; }
 
-        function renderTemplates() {
-            const l = document.getElementById('templates-list'); if (!l) return;
-            if (!settings.templates.length) { l.innerHTML = '<div style="color:' + T.muted + ';font-size:12px;text-align:center;padding:15px;">Нет шаблонов</div>'; return; }
-            l.innerHTML = settings.templates.map((t, i) => `
-                <div style="background:${T.bg};border-radius:8px;padding:8px 10px;margin-bottom:4px;border:1px solid ${T.border};font-size:12px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-                        <span class="tpl-name" data-id="${t.id}" style="color:${T.text};font-weight:500;cursor:pointer;">${t.name} ✏️</span>
-                        <div style="display:flex;gap:4px;">
-                            <button class="tpl-toggle" data-i="${i}" style="background:none;border:1px solid ${t.enabled ? T.green : T.red};color:${t.enabled ? T.green : T.red};padding:1px 6px;border-radius:4px;cursor:pointer;font-size:10px;">${t.enabled ? '✅' : '⛔'}</button>
-                            <button class="tpl-del" data-i="${i}" style="background:none;border:none;color:${T.red};cursor:pointer;font-size:12px;">🗑</button>
-                        </div>
-                    </div>
-                    <div style="color:${T.muted};font-size:10px;">${t.template.substring(0, 55)}${t.template.length > 55 ? '...' : ''}</div>
-                </div>`).join('');
-            document.querySelectorAll('.tpl-toggle').forEach(b => { b.onclick = function() { const i = parseInt(this.dataset.i); settings.templates[i].enabled = !settings.templates[i].enabled; saveSettings(); renderTemplates(); }; });
-            document.querySelectorAll('.tpl-del').forEach(b => { b.onclick = function() { settings.templates.splice(parseInt(this.dataset.i), 1); saveSettings(); renderTemplates(); }; });
-            document.querySelectorAll('.tpl-name').forEach(el => { el.onclick = function() { const id = this.dataset.id, tpl = settings.templates.find(t => t.id === id); if (tpl) { document.getElementById('add-template-form').style.display = 'block'; document.getElementById('tpl-name').value = tpl.name; document.getElementById('tpl-prompt').value = tpl.prompt; document.getElementById('tpl-text').value = tpl.template; document.getElementById('tpl-edit-id').value = tpl.id; document.getElementById('btn-save-tpl').textContent = '💾 Обновить'; } }; });
-        }
+        function renderTemplates() { const l = document.getElementById('templates-list'); if (!l) return; if (!settings.templates.length) { l.innerHTML = '<div style="color:' + T.muted + ';font-size:12px;text-align:center;padding:15px;">Нет шаблонов</div>'; return; } l.innerHTML = settings.templates.map((t, i) => `<div style="background:${T.bg};border-radius:8px;padding:8px 10px;margin-bottom:4px;border:1px solid ${T.border};font-size:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><span class="tpl-name" data-id="${t.id}" style="color:${T.text};font-weight:500;cursor:pointer;">${t.name} ✏️</span><div style="display:flex;gap:4px;"><button class="tpl-toggle" data-i="${i}" style="background:none;border:1px solid ${t.enabled ? T.green : T.red};color:${t.enabled ? T.green : T.red};padding:1px 6px;border-radius:4px;cursor:pointer;font-size:10px;">${t.enabled ? '✅' : '⛔'}</button><button class="tpl-del" data-i="${i}" style="background:none;border:none;color:${T.red};cursor:pointer;font-size:12px;">🗑</button></div></div><div style="color:${T.muted};font-size:10px;">${t.template.substring(0, 55)}${t.template.length > 55 ? '...' : ''}</div></div>`).join(''); document.querySelectorAll('.tpl-toggle').forEach(b => { b.onclick = function() { const i = parseInt(this.dataset.i); settings.templates[i].enabled = !settings.templates[i].enabled; saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-del').forEach(b => { b.onclick = function() { settings.templates.splice(parseInt(this.dataset.i), 1); saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-name').forEach(el => { el.onclick = function() { const id = this.dataset.id, tpl = settings.templates.find(t => t.id === id); if (tpl) { document.getElementById('add-template-form').style.display = 'block'; document.getElementById('tpl-name').value = tpl.name; document.getElementById('tpl-prompt').value = tpl.prompt; document.getElementById('tpl-text').value = tpl.template; document.getElementById('tpl-edit-id').value = tpl.id; document.getElementById('btn-save-tpl').textContent = '💾 Обновить'; } }; }); }
         document.getElementById('btn-add-template').onclick = function() { const f = document.getElementById('add-template-form'); f.style.display = f.style.display === 'block' ? 'none' : 'block'; if (f.style.display === 'block') { document.getElementById('tpl-name').value = ''; document.getElementById('tpl-prompt').value = ''; document.getElementById('tpl-text').value = ''; document.getElementById('tpl-edit-id').value = ''; document.getElementById('btn-save-tpl').textContent = '💾 Сохранить'; } };
         document.getElementById('btn-cancel-tpl').onclick = function() { document.getElementById('add-template-form').style.display = 'none'; };
         document.getElementById('btn-save-tpl').onclick = function() { const n = document.getElementById('tpl-name').value.trim(), p = document.getElementById('tpl-prompt').value.trim(), t = document.getElementById('tpl-text').value.trim(), eid = document.getElementById('tpl-edit-id').value; if (!n || !p || !t) { alert('Заполните все поля'); return; } if (eid) { const idx = settings.templates.findIndex(x => x.id === eid); if (idx !== -1) { settings.templates[idx].name = n; settings.templates[idx].prompt = p; settings.templates[idx].template = t; showStatus('✅ Обновлён'); } } else { settings.templates.push({ id: 'c_' + Date.now(), name: n, prompt: p, template: t, enabled: true }); showStatus('✅ Добавлен'); } saveSettings(); renderTemplates(); document.getElementById('btn-cancel-tpl').click(); };
 
-        // Чат
         const cmsg = document.getElementById('chat-messages'), cinp = document.getElementById('chat-input'), csnd = document.getElementById('chat-send');
         function acm(r, t) { chatHistory.push({ role: r, text: t }); const d = document.createElement('div'); d.style.cssText = `margin-bottom:8px;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.5;animation:fadeIn 0.2s ease;`; if (r === 'user') { d.style.cssText += `background:${T.accent};color:#fff;text-align:right;`; d.innerHTML = t; } else { d.style.cssText += `background:${T.bg};border:1px solid ${T.border};color:${T.text};`; d.innerHTML = `<div style="color:${T.accent};font-size:11px;margin-bottom:2px;">🤖 ИИ</div>${t}`; } cmsg.appendChild(d); cmsg.scrollTop = cmsg.scrollHeight; }
         function cc() { cmsg.innerHTML = '<div style="color:' + T.muted + ';text-align:center;padding:30px;">Задайте вопрос 👇</div>'; chatHistory = []; }
@@ -479,7 +444,6 @@
         document.getElementById('chat-clear').onclick = cc;
         document.getElementById('chat-copy-all').onclick = function() { navigator.clipboard.writeText(chatHistory.map(m => `${m.role === 'user' ? 'Вы' : 'ИИ'}: ${m.text}`).join('\n\n')).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
 
-        // Калькулятор
         let cur = '0', prev = '', op = null, reset = false;
         function upd() { const d = document.getElementById('calc-display'); if (d) d.textContent = cur; }
         document.querySelectorAll('.calc-btn').forEach(b => { b.onclick = function() { const v = this.dataset.val; if (v === 'C') { cur = '0'; prev = ''; op = null; reset = false; } else if (v === '±') { cur = String(-parseFloat(cur)); } else if (v === '%') { cur = String(parseFloat(cur) / 100); } else if (v === '⌫') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; } else if (['+', '−', '×', '÷'].includes(v)) { if (op && !reset) c(); prev = cur; op = v; reset = true; } else if (v === '=') { c(); op = null; reset = true; } else if (v === '.') { if (reset) { cur = '0.'; reset = false; } else if (!cur.includes('.')) cur += '.'; } else { if (reset) { cur = v; reset = false; } else cur = cur === '0' ? v : cur + v; } upd(); }; });
@@ -487,7 +451,6 @@
         document.getElementById('calc-copy').onclick = function() { navigator.clipboard.writeText(cur).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
         document.getElementById('calc-paste').onclick = function() { if (smartPasteToChat(cur)) { this.textContent = '✅'; setTimeout(() => this.textContent = '📩 В чат', 2000); } };
 
-        // Остальные обработчики
         document.getElementById('greeting-toggle').onclick = function() { settings.greetingEnabled = !settings.greetingEnabled; saveSettings(); this.textContent = settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'; this.style.background = settings.greetingEnabled ? T.green : 'transparent'; this.style.color = settings.greetingEnabled ? '#fff' : T.muted; this.style.borderColor = settings.greetingEnabled ? T.green : T.border; document.getElementById('chk-auto-greeting-settings').checked = settings.greetingEnabled; };
         document.getElementById('chk-auto-greeting-settings').onchange = function() { document.getElementById('greeting-toggle').click(); };
         document.getElementById('chk-autocopy').onchange = function() { settings.autoCopy = this.checked; saveSettings(); };
@@ -505,7 +468,6 @@
 
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
-
-        console.log('✅ Ozon CRM v10.6 — ПРЕМИУМ ДИЗАЙН!');
+        console.log('✅ Ozon CRM v10.7 — chrome.storage обновление!');
     }, 1500);
 })();
