@@ -8,7 +8,7 @@
   "content_scripts": [
     {
       "matches": ["https://crm.o3team.ru/*"],
-      "js": ["content.js"],
+       "js": ["config.js", "content.js"],
       "run_at": "document_end"
     }
   ],
