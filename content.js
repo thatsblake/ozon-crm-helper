@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
-// @version      10.9
-// @description  ФИНАЛЬНАЯ ВЕРСИЯ
+// @version      11.0
+// @description  ФИНАЛЬНАЯ ВЕРСИЯ с кнопками
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -11,7 +11,7 @@
 (function() {
     'use strict';
 
-    const VERSION = '10.9';
+    const VERSION = '11.0';
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
     const GITHUB_TOKEN = 'ghp_' + 'MJxmRRjZ' + 'PmJUBgrYNxtFGY42xDRyiO28' + 'UFrI';
@@ -19,21 +19,20 @@
     const API_MODEL = 'gpt-4o-mini';
     const SCRIPT_START_TIME = Date.now();
 
-    // ========== АВТООБНОВЛЕНИЕ ==========
+    // ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
     async function checkUpdates() {
         try {
             const r = await fetch(`https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt?t=${Date.now()}`);
             if (!r.ok) return;
             const latest = (await r.text()).trim();
             if (latest !== VERSION) {
-                showUpdateBtn(latest);
+                showUpdateNotif(latest);
             }
         } catch(e) {}
     }
 
-    function showUpdateBtn(version) {
-        const bar = document.getElementById('update-bar');
-        if (bar) bar.remove();
+    function showUpdateNotif(version) {
+        document.getElementById('update-bar')?.remove();
         
         const div = document.createElement('div');
         div.id = 'update-bar';
@@ -43,9 +42,9 @@
                 <div style="width:36px;height:36px;background:linear-gradient(135deg,#eab308,#f59e0b);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;">✦</div>
                 <div style="flex:1;">
                     <div style="font-weight:600;font-size:14px;color:#fff;">Обновление ${version}</div>
-                    <div style="color:rgba(255,255,255,0.45);font-size:12px;">Нажми «Обновить»</div>
+                    <div style="color:rgba(255,255,255,0.45);font-size:12px;">Нажми «Как обновиться»</div>
                 </div>
-                <button id="update-close" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:16px;">✕</button>
+                <button id="update-close" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:16px;padding:4px;">✕</button>
             </div>
             <button id="update-do" style="width:100%;background:linear-gradient(135deg,#eab308,#f59e0b);color:#fff;border:none;padding:10px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;">⬇️ Как обновиться</button>`;
         document.body.appendChild(div);
@@ -59,7 +58,7 @@
                     2️⃣ Распакуй папку<br>
                     3️⃣ Открой <b>opera://extensions</b><br>
                     4️⃣ Нажми ⟳ и выбери папку<br><br>
-                    <a id="github-link" href="#" style="color:#eab308;text-decoration:none;">⬇️ Скачать с GitHub</a>
+                    <a id="github-link" href="#" style="color:#eab308;text-decoration:none;font-weight:500;">⬇️ Скачать с GitHub</a>
                 </div>`;
             document.getElementById('github-link').onclick = (e) => {
                 e.preventDefault();
@@ -74,7 +73,6 @@
         @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
         @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         @keyframes scaleIn { from { transform:scale(0.92); opacity:0; } to { transform:scale(1); opacity:1; } }
-        * { box-sizing:border-box; }
         ::-webkit-scrollbar { width:4px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
@@ -127,7 +125,6 @@
     }
     document.addEventListener('focusin', function(e) { if (e.target?.matches('textarea[data-qa-id="chat-dialog.chat.textarea"]')) setTimeout(() => insertGreeting(e.target), 100); });
 
-    // ========== API ==========
     async function askAI(messages) {
         const r = await fetch(API_URL, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GITHUB_TOKEN}` },
@@ -161,17 +158,17 @@
                 <span id="header-title" style="font-size:15px;letter-spacing:-0.3px;">Помощник</span>
             </div>
             <div style="display:flex;gap:3px;align-items:center;">
-                <button id="mode-toggle" style="display:flex;align-items:center;gap:5px;background:${T.card};border:1px solid ${T.border};color:${T.muted};cursor:pointer;font-size:11px;padding:5px 12px;border-radius:8px;"><span style="font-size:13px;">💬</span><span>Чат</span></button>
-                <button id="calc-toggle" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px 6px;">🧮</button>
-                <button id="check-update-btn" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px 6px;">🔄</button>
+                <button id="mode-toggle" data-action="mode" style="display:flex;align-items:center;gap:5px;background:${T.card};border:1px solid ${T.border};color:${T.muted};cursor:pointer;font-size:11px;padding:5px 12px;border-radius:8px;"><span style="font-size:13px;">💬</span><span>Чат</span></button>
+                <button id="calc-toggle" data-action="calc" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px 6px;">🧮</button>
+                <button id="check-update-btn" data-action="update" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px 6px;">🔄</button>
                 <div style="width:1px;height:20px;background:${T.border};margin:0 4px;"></div>
                 <button class="panel-btn" data-p="templates" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px;">🧩</button>
                 <button class="panel-btn" data-p="stats" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px;">📊</button>
                 <button class="panel-btn" data-p="history" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px;">📚</button>
                 <button class="panel-btn" data-p="settings" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:17px;padding:5px;">⚙️</button>
                 <div style="width:1px;height:20px;background:${T.border};margin:0 4px;"></div>
-                <button id="main-minimize" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:5px 3px;opacity:0.5;">—</button>
-                <button id="main-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:5px 3px;opacity:0.5;">✕</button>
+                <button id="main-minimize" data-action="minimize" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:5px 3px;">—</button>
+                <button id="main-close" data-action="close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;padding:5px 3px;">✕</button>
             </div>`;
 
         const body = document.createElement('div');
@@ -180,7 +177,7 @@
         body.innerHTML = `
             <div id="status-message" style="display:none;font-size:12px;color:${T.accent};margin-bottom:10px;text-align:center;padding:10px 14px;background:${T.card};border:1px solid ${T.border};border-radius:10px;animation:fadeIn 0.2s ease;"></div>
 
-            <!-- ===== ПЕРЕФРАЗИРОВАНИЕ ===== -->
+            <!-- ПЕРЕФРАЗИРОВАНИЕ -->
             <div id="paraphrase-mode">
                 <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;margin-bottom:10px;">
                     <div style="font-size:11px;color:${T.muted};margin-bottom:8px;font-weight:500;letter-spacing:0.5px;">ВВЕДИТЕ ТЕКСТ</div>
@@ -230,7 +227,7 @@
                 </div>
             </div>
 
-            <!-- ===== ЧАТ ===== -->
+            <!-- ЧАТ -->
             <div id="chat-mode" style="display:none;">
                 <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;margin-bottom:10px;">
                     <div id="chat-messages" style="min-height:200px;max-height:300px;overflow-y:auto;font-size:13px;line-height:1.6;">
@@ -247,89 +244,25 @@
                 </div>
             </div>
 
-            <!-- ===== КАЛЬКУЛЯТОР ===== -->
+            <!-- КАЛЬКУЛЯТОР -->
             <div id="calculator-mode" style="display:none;">
                 <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:12px;">
                     <div id="calc-display" style="background:${T.bg};border:1px solid ${T.border};border-radius:10px;padding:14px;font-size:26px;text-align:right;color:${T.text};margin-bottom:10px;font-family:monospace;min-height:34px;">0</div>
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;">
-                        ${['C','±','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','0','.','⌫','='].map(b => `<button class="calc-btn" data-val="${b}" style="padding:12px;border:1px solid ${T.border};border-radius:10px;cursor:pointer;font-size:17px;background:${['÷','×','−','+','='].includes(b) ? `linear-gradient(135deg,${T.accent},${T.accent2})` : ['C','±','%'].includes(b) ? T.bg : T.card};color:${['÷','×','−','+','='].includes(b) ? '#fff' : T.text};${b === '0' ? 'grid-column:span 2;' : ''}">${b}</button>`).join('')}
-                    </div>
-                    <div style="display:flex;gap:8px;margin-top:8px;">
-                        <button id="calc-copy" style="flex:1;padding:8px;border-radius:10px;font-size:11px;cursor:pointer;background:transparent;border:1px solid ${T.accent};color:${T.accent};">📋 Копировать</button>
-                        <button id="calc-paste" style="flex:1;padding:8px;border-radius:10px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 В чат</button>
-                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;">${['C','±','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','0','.','⌫','='].map(b => `<button class="calc-btn" data-val="${b}" style="padding:12px;border:1px solid ${T.border};border-radius:10px;cursor:pointer;font-size:17px;background:${['÷','×','−','+','='].includes(b) ? `linear-gradient(135deg,${T.accent},${T.accent2})` : ['C','±','%'].includes(b) ? T.bg : T.card};color:${['÷','×','−','+','='].includes(b) ? '#fff' : T.text};${b === '0' ? 'grid-column:span 2;' : ''}">${b}</button>`).join('')}</div>
+                    <div style="display:flex;gap:8px;margin-top:8px;"><button id="calc-copy" style="flex:1;padding:8px;border-radius:10px;font-size:11px;cursor:pointer;background:transparent;border:1px solid ${T.accent};color:${T.accent};">📋 Копировать</button><button id="calc-paste" style="flex:1;padding:8px;border-radius:10px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 В чат</button></div>
                 </div>
             </div>
 
-            <!-- ===== ПАНЕЛИ ===== -->
-            <div id="panel-templates" class="panel" style="display:none;">
-                <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                        <span style="font-size:14px;font-weight:600;">🧩 Шаблоны</span>
-                        <button id="btn-add-template" style="padding:6px 16px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">+ Добавить</button>
-                    </div>
-                    <div id="templates-list"></div>
-                    <div id="add-template-form" style="display:none;margin-top:10px;padding:12px;background:${T.bg};border-radius:10px;border:1px solid ${T.border};">
-                        <input type="text" id="tpl-name" placeholder="Название" style="width:100%;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:12px;outline:none;background:${T.card};color:${T.text};margin-bottom:6px;">
-                        <textarea id="tpl-prompt" placeholder="Описание для ИИ" style="width:100%;min-height:36px;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:6px;"></textarea>
-                        <textarea id="tpl-text" placeholder="Текст шаблона" style="width:100%;min-height:50px;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:8px;"></textarea>
-                        <input type="hidden" id="tpl-edit-id" value="">
-                        <div style="display:flex;gap:8px;"><button id="btn-save-tpl" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.green};color:#fff;border:none;">💾 Сохранить</button><button id="btn-cancel-tpl" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">✕ Отмена</button></div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="panel-stats" class="panel" style="display:none;">
-                <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;">
-                    <div style="font-size:14px;font-weight:600;margin-bottom:10px;">📊 Статистика</div>
-                    <div id="stats-content"></div>
-                </div>
-            </div>
-
-            <div id="panel-history" class="panel" style="display:none;">
-                <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                        <span style="font-size:14px;font-weight:600;">📚 История</span>
-                        <button id="btn-clear-history" style="padding:4px 14px;border-radius:8px;font-size:11px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">Очистить</button>
-                    </div>
-                    <div id="history-list"></div>
-                </div>
-            </div>
-
-            <div id="panel-settings" class="panel" style="display:none;">
-                <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;">
-                    <div style="font-size:14px;font-weight:600;margin-bottom:14px;">⚙️ Настройки</div>
-                    
-                    <div style="font-size:12px;color:${T.muted};margin-bottom:8px;">Тема оформления</div>
-                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;" id="theme-selector">
-                        ${Object.entries(themes).map(([k,t]) => `<button class="theme-btn" data-theme="${k}" style="flex:1;min-width:70px;padding:6px 8px;border-radius:8px;font-size:10px;cursor:pointer;border:1px solid ${settings.theme === k ? t.accent : T.border};background:${settings.theme === k ? t.accent : 'transparent'};color:${settings.theme === k ? '#fff' : T.text};">${t.name}</button>`).join('')}
-                    </div>
-                    
-                    <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:10px;">
-                        <input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};width:16px;height:16px;"> Автоприветствие
-                    </label>
-                    <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:14px;">
-                        <input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};width:16px;height:16px;"> Автокопировать
-                    </label>
-                    
-                    <details>
-                        <summary style="font-size:12px;color:${T.muted};cursor:pointer;padding:8px 0;">⌨️ Горячие клавиши</summary>
-                        <div style="margin-top:8px;padding:12px;background:${T.bg};border-radius:10px;border:1px solid ${T.border};">
-                            ${['paraphrase|⟳ Перефразировать','retry|🔄 Ещё вариант','copyFromChat|📋 Из чата','pasteToChat|📩 В чат','toggleGreeting|✨ Приветствие','quickFriendly|😊 Дружелюбный','quickProfessional|💼 Деловой','quickShort|✂️ Краткий','quickPolite|🙏 Вежливый'].map(x=>{const[k,l]=x.split('|');return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="color:${T.muted};font-size:12px;">${l}</span><input type="text" id="hk-${k}" value="${settings.hotkeys[k]||''}" style="width:55px;padding:4px 6px;border-radius:6px;border:1px solid ${T.border};background:${T.card};color:${T.text};text-align:center;font-size:11px;outline:none;"></div>`;}).join('\n')}
-                            <button id="btn-save-hotkeys" style="margin-top:8px;width:100%;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">💾 Сохранить</button>
-                        </div>
-                    </details>
-                    
-                    <div style="padding-top:12px;border-top:1px solid ${T.border};text-align:center;margin-top:12px;">
-                        <span style="font-size:11px;color:${T.muted};">v${VERSION}</span>
-                    </div>
-                </div>
-            </div>`;
+            <!-- ПАНЕЛИ -->
+            <div id="panel-templates" class="panel" style="display:none;"><div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span style="font-size:14px;font-weight:600;">🧩 Шаблоны</span><button id="btn-add-template" style="padding:6px 16px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">+ Добавить</button></div><div id="templates-list"></div><div id="add-template-form" style="display:none;margin-top:10px;padding:12px;background:${T.bg};border-radius:10px;border:1px solid ${T.border};"><input type="text" id="tpl-name" placeholder="Название" style="width:100%;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:12px;outline:none;background:${T.card};color:${T.text};margin-bottom:6px;"><textarea id="tpl-prompt" placeholder="Описание для ИИ" style="width:100%;min-height:36px;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:6px;"></textarea><textarea id="tpl-text" placeholder="Текст шаблона" style="width:100%;min-height:50px;padding:8px 12px;border:1px solid ${T.border};border-radius:8px;font-size:11px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:8px;"></textarea><input type="hidden" id="tpl-edit-id" value=""><div style="display:flex;gap:8px;"><button id="btn-save-tpl" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:${T.green};color:#fff;border:none;">💾 Сохранить</button><button id="btn-cancel-tpl" style="flex:1;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">✕ Отмена</button></div></div></div></div>
+            <div id="panel-stats" class="panel" style="display:none;"><div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;"><div style="font-size:14px;font-weight:600;margin-bottom:10px;">📊 Статистика</div><div id="stats-content"></div></div></div>
+            <div id="panel-history" class="panel" style="display:none;"><div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span style="font-size:14px;font-weight:600;">📚 История</span><button id="btn-clear-history" style="padding:4px 14px;border-radius:8px;font-size:11px;cursor:pointer;background:none;border:1px solid ${T.red};color:${T.red};">Очистить</button></div><div id="history-list"></div></div></div>
+            <div id="panel-settings" class="panel" style="display:none;"><div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:14px;"><div style="font-size:14px;font-weight:600;margin-bottom:14px;">⚙️ Настройки</div><div style="font-size:12px;color:${T.muted};margin-bottom:8px;">Тема оформления</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;" id="theme-selector">${Object.entries(themes).map(([k,t]) => `<button class="theme-btn" data-theme="${k}" style="flex:1;min-width:70px;padding:6px 8px;border-radius:8px;font-size:10px;cursor:pointer;border:1px solid ${settings.theme === k ? t.accent : T.border};background:${settings.theme === k ? t.accent : 'transparent'};color:${settings.theme === k ? '#fff' : T.text};">${t.name}</button>`).join('')}</div><label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:10px;"><input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};width:16px;height:16px;"> Автоприветствие</label><label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:14px;"><input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};width:16px;height:16px;"> Автокопировать</label><details><summary style="font-size:12px;color:${T.muted};cursor:pointer;padding:8px 0;">⌨️ Горячие клавиши</summary><div style="margin-top:8px;padding:12px;background:${T.bg};border-radius:10px;border:1px solid ${T.border};">${['paraphrase|⟳ Перефразировать','retry|🔄 Ещё вариант','copyFromChat|📋 Из чата','pasteToChat|📩 В чат','toggleGreeting|✨ Приветствие','quickFriendly|😊 Дружелюбный','quickProfessional|💼 Деловой','quickShort|✂️ Краткий','quickPolite|🙏 Вежливый'].map(x=>{const[k,l]=x.split('|');return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="color:${T.muted};font-size:12px;">${l}</span><input type="text" id="hk-${k}" value="${settings.hotkeys[k]||''}" style="width:55px;padding:4px 6px;border-radius:6px;border:1px solid ${T.border};background:${T.card};color:${T.text};text-align:center;font-size:11px;outline:none;"></div>`;}).join('\n')}<button id="btn-save-hotkeys" style="margin-top:8px;width:100%;padding:8px;border-radius:8px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">💾 Сохранить</button></div></details><div style="padding-top:12px;border-top:1px solid ${T.border};text-align:center;margin-top:12px;"><span style="font-size:11px;color:${T.muted};">v${VERSION}</span></div></div></div>`;
 
         container.append(header, body);
         document.body.appendChild(container);
 
-        // ===== КНОПКА =====
+        // КНОПКА
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'paraphrase-toggle-btn';
         toggleBtn.innerHTML = '✦';
@@ -339,38 +272,66 @@
         toggleBtn.onclick = function() { const v = container.style.display !== 'none'; container.style.display = v ? 'none' : 'block'; toggleBtn.style.display = v ? 'flex' : 'none'; };
         document.body.appendChild(toggleBtn);
 
-        // ===== ОБРАБОТЧИКИ =====
-        document.getElementById('check-update-btn').onclick = () => { checkUpdates(); showStatus('🔍 Проверяю...'); };
-        document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
-        let minimized = false;
-        document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
-        let dragging = false, ox, oy;
-        header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON') return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
+        // ===== ОБРАБОТЧИКИ ЧЕРЕЗ data-action =====
+        document.querySelectorAll('[data-action]').forEach(btn => {
+            btn.onclick = function(e) {
+                const action = this.dataset.action;
+                if (action === 'close') {
+                    container.style.display = 'none';
+                    toggleBtn.style.display = 'flex';
+                } else if (action === 'minimize') {
+                    minimized = !minimized;
+                    body.style.display = minimized ? 'none' : 'block';
+                    this.textContent = minimized ? '□' : '—';
+                } else if (action === 'mode') {
+                    switchMode();
+                } else if (action === 'calc') {
+                    toggleCalc();
+                } else if (action === 'update') {
+                    checkUpdates();
+                    showStatus('🔍 Проверяю...');
+                }
+            };
+        });
 
-        let calcOpen = false;
-        const pm = document.getElementById('paraphrase-mode');
-        const cm = document.getElementById('chat-mode');
-        const cam = document.getElementById('calculator-mode');
-        const mt = document.getElementById('mode-toggle');
-        const ct = document.getElementById('calc-toggle');
-        const ht = document.getElementById('header-title');
+        // Перетаскивание
+        let dragging = false, ox, oy, minimized = false;
+        header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON' || e.target.closest('[data-action]')) return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
 
+        // Режимы
         function switchMode() {
+            const pm = document.getElementById('paraphrase-mode');
+            const cm = document.getElementById('chat-mode');
+            const cam = document.getElementById('calculator-mode');
+            const mt = document.getElementById('mode-toggle');
+            const ht = document.getElementById('header-title');
+            
             if (currentMode === 'paraphrase') {
-                currentMode = 'chat'; pm.style.display = 'none'; cm.style.display = 'block'; cam.style.display = 'none'; calcOpen = false;
+                currentMode = 'chat'; pm.style.display = 'none'; cm.style.display = 'block'; cam.style.display = 'none';
                 mt.innerHTML = '<span style="font-size:13px;">✏️</span><span>Перефразировать</span>'; ht.textContent = 'Чат с ИИ';
             } else {
-                currentMode = 'paraphrase'; pm.style.display = 'block'; cm.style.display = 'none'; cam.style.display = 'none'; calcOpen = false;
+                currentMode = 'paraphrase'; pm.style.display = 'block'; cm.style.display = 'none'; cam.style.display = 'none';
                 mt.innerHTML = '<span style="font-size:13px;">💬</span><span>Чат</span>'; ht.textContent = 'Помощник';
             }
         }
-        function toggleCalc() {
-            calcOpen = !calcOpen;
-            if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; }
-            else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; mt.innerHTML = '<span style="font-size:13px;">✏️</span><span>Перефразировать</span>'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; mt.innerHTML = '<span style="font-size:13px;">💬</span><span>Чат</span>'; } }
-        }
-        mt.onclick = switchMode; ct.onclick = toggleCalc;
 
+        function toggleCalc() {
+            const pm = document.getElementById('paraphrase-mode');
+            const cm = document.getElementById('chat-mode');
+            const cam = document.getElementById('calculator-mode');
+            const ht = document.getElementById('header-title');
+            
+            if (!cam.style.display || cam.style.display === 'none') {
+                pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block';
+                ht.textContent = 'Калькулятор';
+            } else {
+                cam.style.display = 'none';
+                if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; }
+                else { pm.style.display = 'block'; ht.textContent = 'Помощник'; }
+            }
+        }
+
+        // Панели
         let ap = null;
         document.querySelectorAll('.panel-btn').forEach(b => { b.onclick = function() { const p = this.dataset.p, el = document.getElementById('panel-' + p); if (ap === p) { el.style.display = 'none'; ap = null; } else { document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); el.style.display = 'block'; ap = p; if (p === 'history') renderHistory(); if (p === 'stats') renderStats(); if (p === 'templates') renderTemplates(); } }; });
 
@@ -381,6 +342,7 @@
         document.getElementById('btn-cancel-tpl').onclick = function() { document.getElementById('add-template-form').style.display = 'none'; };
         document.getElementById('btn-save-tpl').onclick = function() { const n = document.getElementById('tpl-name').value.trim(), p = document.getElementById('tpl-prompt').value.trim(), t = document.getElementById('tpl-text').value.trim(), eid = document.getElementById('tpl-edit-id').value; if (!n || !p || !t) { alert('Заполните все поля'); return; } if (eid) { const idx = settings.templates.findIndex(x => x.id === eid); if (idx !== -1) { settings.templates[idx].name = n; settings.templates[idx].prompt = p; settings.templates[idx].template = t; showStatus('✅ Обновлён'); } } else { settings.templates.push({ id: 'c_' + Date.now(), name: n, prompt: p, template: t, enabled: true }); showStatus('✅ Добавлен'); } saveSettings(); renderTemplates(); document.getElementById('btn-cancel-tpl').click(); };
 
+        // Чат
         const cmsg = document.getElementById('chat-messages'), cinp = document.getElementById('chat-input'), csnd = document.getElementById('chat-send');
         function acm(r, t) { chatHistory.push({ role: r, text: t }); const d = document.createElement('div'); d.style.cssText = `margin-bottom:8px;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.6;animation:fadeIn 0.2s ease;`; if (r === 'user') { d.style.cssText += `background:${T.accent};color:#fff;`; d.innerHTML = t; } else { d.style.cssText += `background:${T.bg};border:1px solid ${T.border};color:${T.text};`; d.innerHTML = '<div style="color:' + T.accent + ';font-size:11px;margin-bottom:4px;font-weight:500;">🤖 ИИ</div>' + t; } cmsg.appendChild(d); cmsg.scrollTop = cmsg.scrollHeight; }
         function cc() { cmsg.innerHTML = '<div style="color:' + T.muted + ';text-align:center;padding:40px 20px;">Задайте вопрос 👇</div>'; chatHistory = []; }
@@ -389,6 +351,7 @@
         document.getElementById('chat-clear').onclick = cc;
         document.getElementById('chat-copy-all').onclick = function() { navigator.clipboard.writeText(chatHistory.map(m => `${m.role === 'user' ? 'Вы' : 'ИИ'}: ${m.text}`).join('\n\n')).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
 
+        // Калькулятор
         let cur = '0', prev = '', op = null, reset = false;
         function upd() { const d = document.getElementById('calc-display'); if (d) d.textContent = cur; }
         document.querySelectorAll('.calc-btn').forEach(b => { b.onclick = function() { const v = this.dataset.val; if (v === 'C') { cur = '0'; prev = ''; op = null; reset = false; } else if (v === '±') { cur = String(-parseFloat(cur)); } else if (v === '%') { cur = String(parseFloat(cur) / 100); } else if (v === '⌫') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; } else if (['+', '−', '×', '÷'].includes(v)) { if (op && !reset) c(); prev = cur; op = v; reset = true; } else if (v === '=') { c(); op = null; reset = true; } else if (v === '.') { if (reset) { cur = '0.'; reset = false; } else if (!cur.includes('.')) cur += '.'; } else { if (reset) { cur = v; reset = false; } else cur = cur === '0' ? v : cur + v; } upd(); }; });
@@ -396,6 +359,7 @@
         document.getElementById('calc-copy').onclick = function() { navigator.clipboard.writeText(cur).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
         document.getElementById('calc-paste').onclick = function() { if (smartPasteToChat(cur)) { this.textContent = '✅'; setTimeout(() => this.textContent = '📩 В чат', 2000); } };
 
+        // Обработчики
         document.getElementById('greeting-toggle').onclick = function() { settings.greetingEnabled = !settings.greetingEnabled; saveSettings(); this.textContent = settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'; this.style.background = settings.greetingEnabled ? T.green : 'transparent'; this.style.color = settings.greetingEnabled ? '#fff' : T.muted; this.style.borderColor = settings.greetingEnabled ? T.green : T.border; document.getElementById('chk-auto-greeting-settings').checked = settings.greetingEnabled; };
         document.getElementById('chk-auto-greeting-settings').onchange = function() { document.getElementById('greeting-toggle').click(); };
         document.getElementById('chk-autocopy').onchange = function() { settings.autoCopy = this.checked; saveSettings(); };
@@ -414,6 +378,6 @@
         // Проверка обновлений
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
-        console.log('✅ Ozon CRM v10.9 — финальная!');
+        console.log('✅ Ozon CRM v11.0 — кнопки починены!');
     }, 1500);
 })();
