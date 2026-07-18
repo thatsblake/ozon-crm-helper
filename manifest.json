@@ -3,7 +3,7 @@
   "name": "Ozon CRM Мега-помощник",
   "version": "10.6",
   "description": "Автоприветствие, перефразирование, ИИ-шаблоны",
-  "permissions": ["storage", "clipboardWrite"],
+  "permissions": ["storage", "clipboardWrite", "unlimitedStorage"]
   "host_permissions": ["https://crm.o3team.ru/*"],
   "content_scripts": [
     {
