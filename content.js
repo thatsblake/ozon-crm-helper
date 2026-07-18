@@ -20,7 +20,7 @@
     const SCRIPT_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/content.js`;
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
 
-    const GITHUB_TOKEN = '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';
+    const GITHUB_TOKEN = '';
     const API_URL = 'https://models.inference.ai.azure.com/chat/completions';
     const SCRIPT_START_TIME = Date.now();
 
