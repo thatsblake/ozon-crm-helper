@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
-// @version      10.1
-// @description  Премиальный дизайн + автообновление
+// @version      10.2
+// @description  Автообновление ИСПРАВЛЕНО
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -13,7 +13,7 @@
 
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
-    const CURRENT_VERSION = '10.1';
+    const CURRENT_VERSION = '10.2';
     
     const GITHUB_TOKEN = 'ghp_' + 'MJxmRRjZ' + 'PmJUBgrYNxtFGY42xDRyiO28' + 'UFrI';
     
@@ -23,38 +23,41 @@
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
     const SCRIPT_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/content.js`;
 
-    // ========== ПОЛНОЕ АВТООБНОВЛЕНИЕ ==========
-    (function applyPendingUpdate() {
-        const pendingScript = localStorage.getItem('ozon_pending_script');
-        const pendingVersion = localStorage.getItem('ozon_pending_version');
+    // ========== АВТООБНОВЛЕНИЕ (ПОЛНОСТЬЮ ПЕРЕПИСАНО) ==========
+    // Проверяем при загрузке страницы: есть ли новый код в localStorage
+    const pendingScript = localStorage.getItem('ozon_pending_script');
+    const pendingVersion = localStorage.getItem('ozon_pending_version');
+    
+    if (pendingScript && pendingVersion) {
+        console.log(`🔄 Применяю обновление до версии ${pendingVersion}...`);
         
-        if (pendingScript && pendingVersion) {
-            console.log(`🔄 Применяю обновление до версии ${pendingVersion}...`);
-            
-            document.getElementById('paraphrase-container')?.remove();
-            document.getElementById('paraphrase-toggle-btn')?.remove();
-            document.getElementById('update-notification')?.remove();
-            document.getElementById('selection-popup')?.remove();
-            document.getElementById('template-popup')?.remove();
-            
-            localStorage.removeItem('ozon_pending_script');
-            localStorage.removeItem('ozon_pending_version');
-            
-            try {
-                const newFunction = new Function(pendingScript);
-                newFunction();
-                console.log(`✅ Обновление до ${pendingVersion} применено!`);
-                return;
-            } catch(e) {
-                console.error('❌ Ошибка применения обновления:', e);
-            }
+        // Очищаем старые элементы
+        document.getElementById('paraphrase-container')?.remove();
+        document.getElementById('paraphrase-toggle-btn')?.remove();
+        
+        // Очищаем localStorage
+        localStorage.removeItem('ozon_pending_script');
+        localStorage.removeItem('ozon_pending_version');
+        
+        try {
+            // Выполняем новый код
+            eval(pendingScript);
+            console.log(`✅ Обновление до ${pendingVersion} применено!`);
+            // Выходим — новый код уже запущен
+        } catch(e) {
+            console.error('❌ Ошибка обновления:', e);
+            // Если ошибка — продолжаем со старым кодом
         }
-    })();
+    }
 
     async function checkForUpdates() {
         try {
             const resp = await fetch(VERSION_URL + '?t=' + Date.now());
-            if (!resp.ok) { updateCheckResult = '⚠️ Ошибка проверки'; updateStatusUI(); return; }
+            if (!resp.ok) { 
+                updateCheckResult = '⚠️ Ошибка проверки'; 
+                updateStatusUI(); 
+                return; 
+            }
             const latest = (await resp.text()).trim();
             
             if (latest !== CURRENT_VERSION) {
@@ -90,11 +93,13 @@
             
             const newCode = await resp.text();
             
+            // Сохраняем в localStorage
             localStorage.setItem('ozon_pending_script', newCode);
             localStorage.setItem('ozon_pending_version', latestVersion);
             
             showStatus(`✅ Версия ${latestVersion} загружена! Перезагружаю...`);
             
+            // Перезагружаем страницу через 1 секунду
             setTimeout(() => {
                 location.reload();
             }, 1000);
@@ -105,6 +110,9 @@
     }
 
     function showUpdateNotification(version) {
+        // Удаляем старое уведомление, если есть
+        document.getElementById('update-notification')?.remove();
+        
         const n = document.createElement('div');
         n.id = 'update-notification';
         n.style.cssText = `position:fixed;top:20px;right:20px;width:340px;background:#ffffff;border-radius:16px;padding:20px;z-index:99999999;box-shadow:0 4px 24px rgba(0,0,0,0.12);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;font-size:14px;`;
@@ -114,15 +122,16 @@
                     <div style="width:36px;height:36px;background:#007AFF;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:white;">⟳</div>
                     <div>
                         <div style="font-weight:600;font-size:15px;">Обновление ${version}</div>
-                        <div style="color:#86868b;font-size:12px;">Доступна новая версия</div>
+                        <div style="color:#86868b;font-size:12px;">Нажмите «Обновить»</div>
                     </div>
                 </div>
                 <button id="notif-close" style="background:none;border:none;color:#86868b;cursor:pointer;font-size:18px;padding:4px;">✕</button>
             </div>
             <div style="color:#1a1a1a;font-size:13px;line-height:1.4;margin-bottom:16px;">
-                Нажмите «Обновить» — код скачается с GitHub и страница перезагрузится с новой версией.
+                Новая версия ${version} доступна!<br>
+                Нажмите «Обновить» — код скачается, страница перезагрузится с новой версией.
             </div>
-            <button id="notif-update" style="width:100%;background:#007AFF;color:white;border:none;padding:10px;border-radius:12px;cursor:pointer;font-size:14px;font-weight:500;">⬇️ Скачать и обновить</button>`;
+            <button id="notif-update" style="width:100%;background:#007AFF;color:white;border:none;padding:10px;border-radius:12px;cursor:pointer;font-size:14px;font-weight:500;">⬇️ Скачать и обновить до ${version}</button>`;
         document.body.appendChild(n);
         
         document.getElementById('notif-close').onclick = () => n.remove();
@@ -336,7 +345,7 @@
 
         const container = document.createElement('div');
         container.id = 'paraphrase-container';
-        container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:80vh;background:#ffffff;border-radius:${DS.radius};box-shadow:0 4px 24px rgba(0,0,0,0.08);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:#1a1a1a;flex-direction:column;border:1px solid #e5e5ea;`;
+        container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:80vh;background:#ffffff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.08);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:#1a1a1a;flex-direction:column;border:1px solid #e5e5ea;`;
 
         const header = document.createElement('div');
         header.style.cssText = `padding:14px 16px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid #f0f0f0;`;
@@ -360,7 +369,7 @@
             <div id="status-message" style="display:none;font-size:12px;color:#007AFF;margin-bottom:8px;text-align:center;padding:6px;background:#f5f5f7;border-radius:8px;"></div>
             
             <div id="paraphrase-mode">
-                <textarea id="paraphrase-input" style="width:100%;min-height:64px;padding:10px 12px;border:1px solid #e5e5ea;border-radius:10px;font-size:13px;resize:vertical;box-sizing:border-box;outline:none;background:#f5f5f7;color:#1a1a1a;font-family:inherit;transition:border 0.2s;" placeholder="Введите текст для перефразирования..."></textarea>
+                <textarea id="paraphrase-input" style="width:100%;min-height:64px;padding:10px 12px;border:1px solid #e5e5ea;border-radius:10px;font-size:13px;resize:vertical;box-sizing:border-box;outline:none;background:#f5f5f7;color:#1a1a1a;font-family:inherit;" placeholder="Введите текст для перефразирования..."></textarea>
                 
                 <div style="display:flex;gap:6px;margin:8px 0;">
                     <button id="btn-copy-from-chat" style="flex:1;background:#f5f5f7;border:1px solid #e5e5ea;color:#1a1a1a;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px;">📋 Из чата</button>
@@ -454,14 +463,12 @@
 
             <div id="panel-settings" class="panel" style="display:none;margin-top:8px;border-top:1px solid #f0f0f0;padding-top:8px;">
                 <div style="font-size:13px;color:#1a1a1a;font-weight:500;margin-bottom:8px;">⚙️ Настройки</div>
-                
                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
                     <input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:#007AFF;"> Автоприветствие
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:12px;">
                     <input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:#007AFF;"> Автокопировать
                 </label>
-                
                 <details style="margin-bottom:8px;">
                     <summary style="font-size:12px;color:#86868b;cursor:pointer;padding:6px 0;">⌨️ Горячие клавиши</summary>
                     <div style="margin-top:4px;display:flex;flex-direction:column;gap:3px;font-size:12px;">
@@ -469,7 +476,6 @@
                         <button id="btn-save-hotkeys" style="margin-top:4px;width:100%;background:#007AFF;color:white;border:none;padding:6px;border-radius:8px;cursor:pointer;font-size:12px;">💾 Сохранить</button>
                     </div>
                 </details>
-                
                 <div style="padding-top:8px;border-top:1px solid #f0f0f0;">
                     <div style="font-size:11px;color:#86868b;text-align:center;padding:4px;" id="update-status">${updateCheckResult || '🔄 Нажмите ⟳ для проверки'}</div>
                     <div style="font-size:10px;color:#c7c7cc;text-align:center;">v${CURRENT_VERSION}</div>
@@ -488,7 +494,7 @@
         toggleBtn.onclick = function() { const v = container.style.display !== 'none'; container.style.display = v ? 'none' : 'block'; toggleBtn.style.display = v ? 'flex' : 'none'; };
         document.body.appendChild(toggleBtn);
 
-        // Обработчики (сокращены для компактности, но функционал тот же)
+        // ===== ОБРАБОТЧИКИ =====
         document.getElementById('check-update-btn').onclick = forceCheckUpdate;
         document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
         let minimized = false;
@@ -515,11 +521,37 @@
             document.getElementById('btn-reset-stats').onclick = function() { settings.stats = { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }; saveSettings(); renderStats(); showStatus('📊 Сброшено'); };
         }
 
-        // Все остальные обработчики такие же, как в v10.0
-        // (копируем обработчики из v10.0 для кнопок: greeting-toggle, chk-auto-greeting-settings, chk-autocopy, btn-copy-from-chat, btn-retry-last, btn-submit, btn-retry, btn-copy, btn-paste, quick-tone, theme-btn, btn-save-hotkeys, btn-clear-history, renderTemplates, renderHistory)
-        // Для краткости они опущены, но функционал полностью сохранён в полной версии на GitHub
+        document.getElementById('greeting-toggle').onclick = function() { settings.greetingEnabled = !settings.greetingEnabled; saveSettings(); this.textContent = settings.greetingEnabled ? '✨' : '🚫'; this.style.background = settings.greetingEnabled ? '#34C759' : 'transparent'; this.style.color = settings.greetingEnabled ? 'white' : '#86868b'; document.getElementById('chk-auto-greeting-settings').checked = settings.greetingEnabled; if (!settings.greetingEnabled) { stopProtection(); alreadyGreeted = false; } };
+        document.getElementById('chk-auto-greeting-settings').onchange = function() { document.getElementById('greeting-toggle').click(); };
+        document.getElementById('chk-autocopy').onchange = function() { settings.autoCopy = this.checked; saveSettings(); };
+        document.getElementById('btn-copy-from-chat').onclick = function() { const f = getChatField(); if (f && f.value) { document.getElementById('paraphrase-input').value = f.value; showStatus('✅ Из чата'); } };
+        document.getElementById('btn-retry-last').onclick = function() { if (history.length) { document.getElementById('paraphrase-input').value = history[0].text; showStatus('✅ Из истории'); } else showStatus('📭 Пусто'); };
+        document.getElementById('btn-submit').onclick = async function() {
+            const text = document.getElementById('paraphrase-input').value.trim(); if (!text) { alert('Введите текст'); return; }
+            const style = document.getElementById('paraphrase-style').value, btn = this;
+            btn.disabled = true; btn.textContent = '⏳...'; document.getElementById('paraphrase-loading').style.display = 'block'; document.getElementById('paraphrase-result').style.display = 'none';
+            try {
+                const p = { professional: 'Перепиши в деловом стиле.', friendly: 'Перепиши дружелюбно.', short: 'Сократи до 2-3 предложений.', polite: 'Перепиши вежливо.', fix: 'Исправь ошибки.', original: 'Перефразируй.' }, n = { professional: 'Деловой', friendly: 'Дружелюбный', short: 'Краткий', polite: 'Вежливый', fix: 'Исправление', original: 'Перефразирование' };
+                const r = await askAI([{ role: 'system', content: 'Отвечай ТОЛЬКО перефразированным текстом.' }, { role: 'user', content: `${p[style] || p.original}\n\nТекст: "${text}"` }]);
+                document.getElementById('paraphrase-result-text').textContent = r; document.getElementById('paraphrase-result').style.display = 'block';
+                settings.stats.paraphrased++; settings.stats.totalChars += text.length; saveSettings(); addHistory(r, n[style] || style); showStatus('✅');
+                if (settings.autoCopy) navigator.clipboard.writeText(r);
+            } catch(e) { document.getElementById('paraphrase-result-text').textContent = '❌ ' + e.message; document.getElementById('paraphrase-result').style.display = 'block'; settings.stats.errors++; saveSettings(); }
+            finally { document.getElementById('paraphrase-loading').style.display = 'none'; btn.disabled = false; btn.textContent = '⟳ Выполнить'; }
+        };
+        document.getElementById('btn-retry').onclick = function() { document.getElementById('btn-submit').click(); };
+        document.getElementById('btn-copy').onclick = function() { navigator.clipboard.writeText(document.getElementById('paraphrase-result-text').textContent).then(() => { this.textContent = '✅'; settings.stats.copied++; saveSettings(); setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
+        document.getElementById('btn-paste').onclick = function() { if (smartPasteToChat(document.getElementById('paraphrase-result-text').textContent)) { this.textContent = '✅'; settings.stats.pasted++; saveSettings(); setTimeout(() => this.textContent = '📩 В чат', 2000); } };
+        document.querySelectorAll('.quick-tone').forEach(b => { b.onclick = function() { const t = document.getElementById('paraphrase-result-text'); if (t && t.textContent && !t.textContent.startsWith('❌')) { document.getElementById('paraphrase-input').value = t.textContent; document.getElementById('paraphrase-style').value = this.dataset.s; document.getElementById('btn-submit').click(); } }; });
+        document.getElementById('btn-save-hotkeys').onclick = function() { ['paraphrase', 'retry', 'copyFromChat', 'pasteToChat', 'toggleGreeting', 'quickFriendly', 'quickProfessional', 'quickShort', 'quickPolite'].forEach(f => { const e = document.getElementById('hk-' + f); if (e) settings.hotkeys[f] = e.value || ' '; }); saveSettings(); showStatus('✅'); };
+        document.getElementById('btn-clear-history').onclick = function() { history = []; localStorage.setItem('ozon_crm_history', '[]'); renderHistory(); showStatus('🗑'); };
+        function renderTemplates() { const l = document.getElementById('templates-list'); if (!l) return; if (!settings.templates.length) { l.innerHTML = '<div style="color:#86868b;font-size:12px;text-align:center;padding:10px;">Нет шаблонов</div>'; return; } l.innerHTML = settings.templates.map((t, i) => `<div style="background:#f5f5f7;border-radius:8px;padding:6px;margin-bottom:4px;border:1px solid #e5e5ea;font-size:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><span class="tpl-name" data-id="${t.id}" style="color:#1a1a1a;font-weight:500;cursor:pointer;">${t.name} ✏️</span><div style="display:flex;gap:4px;"><button class="tpl-toggle" data-i="${i}" style="background:none;border:1px solid ${t.enabled ? '#34C759' : '#FF3B30'};color:${t.enabled ? '#34C759' : '#FF3B30'};padding:1px 5px;border-radius:4px;cursor:pointer;font-size:10px;">${t.enabled ? '✅' : '⛔'}</button><button class="tpl-del" data-i="${i}" style="background:none;border:none;color:#FF3B30;cursor:pointer;font-size:12px;">🗑</button></div></div><div style="color:#86868b;font-size:10px;">${t.template.substring(0, 50)}${t.template.length > 50 ? '...' : ''}</div></div>`).join(''); document.querySelectorAll('.tpl-toggle').forEach(b => { b.onclick = function() { const i = parseInt(this.dataset.i); settings.templates[i].enabled = !settings.templates[i].enabled; saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-del').forEach(b => { b.onclick = function() { settings.templates.splice(parseInt(this.dataset.i), 1); saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-name').forEach(el => { el.onclick = function() { const id = this.dataset.id, tpl = settings.templates.find(t => t.id === id); if (tpl) { document.getElementById('add-template-form').style.display = 'block'; document.getElementById('tpl-name').value = tpl.name; document.getElementById('tpl-prompt').value = tpl.prompt; document.getElementById('tpl-text').value = tpl.template; document.getElementById('tpl-edit-id').value = tpl.id; document.getElementById('btn-save-tpl').textContent = '💾 Обновить'; } }; }); }
+        document.getElementById('btn-add-template').onclick = function() { const f = document.getElementById('add-template-form'); f.style.display = f.style.display === 'block' ? 'none' : 'block'; if (f.style.display === 'block') { document.getElementById('tpl-name').value = ''; document.getElementById('tpl-prompt').value = ''; document.getElementById('tpl-text').value = ''; document.getElementById('tpl-edit-id').value = ''; document.getElementById('btn-save-tpl').textContent = '💾 Сохранить'; } };
+        document.getElementById('btn-cancel-tpl').onclick = function() { document.getElementById('add-template-form').style.display = 'none'; };
+        document.getElementById('btn-save-tpl').onclick = function() { const n = document.getElementById('tpl-name').value.trim(), p = document.getElementById('tpl-prompt').value.trim(), t = document.getElementById('tpl-text').value.trim(), eid = document.getElementById('tpl-edit-id').value; if (!n || !p || !t) { alert('Заполните все поля'); return; } if (eid) { const idx = settings.templates.findIndex(x => x.id === eid); if (idx !== -1) { settings.templates[idx].name = n; settings.templates[idx].prompt = p; settings.templates[idx].template = t; showStatus('✅ Обновлён'); } } else { settings.templates.push({ id: 'c_' + Date.now(), name: n, prompt: p, template: t, enabled: true }); showStatus('✅ Добавлен'); } saveSettings(); renderTemplates(); document.getElementById('btn-cancel-tpl').click(); };
+        function renderHistory() { const l = document.getElementById('history-list'); if (!l) return; if (!history.length) { l.innerHTML = '<div style="color:#86868b;font-size:12px;text-align:center;padding:15px;">Пусто</div>'; return; } l.innerHTML = history.slice(0, 10).map(i => `<div style="background:#f5f5f7;border-radius:8px;padding:7px;margin-bottom:4px;cursor:pointer;border:1px solid #e5e5ea;font-size:12px;" onclick="document.getElementById('paraphrase-input').value='${i.text.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n')}';showStatus('✅');"><div style="display:flex;justify-content:space-between;color:#86868b;font-size:10px;margin-bottom:3px;"><span>${i.type}</span><span>${i.date}</span></div><div style="color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.text.substring(0, 80)}${i.text.length > 80 ? '...' : ''}</div></div>`).join(''); }
 
-        console.log('✅ Ozon CRM v10.1 — премиальный дизайн!');
+        console.log('✅ Ozon CRM v10.2 — автообновление починено!');
     }, 2000);
 
     setInterval(() => {
