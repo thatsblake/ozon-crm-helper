@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ozon CRM Мега-помощник",
-  "version": "9.6",
+  "version": "10.6",
   "description": "Автоприветствие, перефразирование, ИИ-шаблоны",
   "permissions": ["storage", "clipboardWrite"],
   "host_permissions": ["https://crm.o3team.ru/*"],
