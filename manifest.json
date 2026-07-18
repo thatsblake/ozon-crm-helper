@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ozon CRM Мега-помощник",
-  "version": "10.8",
+  "version": "10.9",
   "description": "Автообновление через chrome.storage",
   "permissions": [
     "storage",
