@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
-// @version      9.8
-// @description  Полная версия с ИИ + кнопка обновлений
+// @version      10.0
+// @description  Полное автообновление с GitHub
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -13,7 +13,7 @@
 
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
-    const CURRENT_VERSION = '9.8';
+    const CURRENT_VERSION = '10.0';
     
     const GITHUB_TOKEN = 'ghp_' + 'MJxmRRjZ' + 'PmJUBgrYNxtFGY42xDRyiO28' + 'UFrI';
     
@@ -21,27 +21,88 @@
     const API_MODEL = 'gpt-4o-mini';
     const SCRIPT_START_TIME = Date.now();
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
+    const SCRIPT_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/content.js`;
 
-    // ========== АВТООБНОВЛЕНИЕ ==========
-    let updateCheckResult = null;
+    // ========== ПОЛНОЕ АВТООБНОВЛЕНИЕ ==========
+    (function applyPendingUpdate() {
+        const pendingScript = localStorage.getItem('ozon_pending_script');
+        const pendingVersion = localStorage.getItem('ozon_pending_version');
+        
+        if (pendingScript && pendingVersion) {
+            console.log(`🔄 Применяю обновление до версии ${pendingVersion}...`);
+            
+            document.getElementById('paraphrase-container')?.remove();
+            document.getElementById('paraphrase-toggle-btn')?.remove();
+            document.getElementById('update-notification')?.remove();
+            document.getElementById('selection-popup')?.remove();
+            document.getElementById('template-popup')?.remove();
+            
+            localStorage.removeItem('ozon_pending_script');
+            localStorage.removeItem('ozon_pending_version');
+            
+            try {
+                const newFunction = new Function(pendingScript);
+                newFunction();
+                console.log(`✅ Обновление до ${pendingVersion} применено!`);
+                showStatus(`✅ Обновлено до версии ${pendingVersion}`);
+                return;
+            } catch(e) {
+                console.error('❌ Ошибка применения обновления:', e);
+                showStatus('❌ Ошибка обновления. Перезагрузите страницу.');
+            }
+        }
+    })();
 
     async function checkForUpdates() {
         try {
             const resp = await fetch(VERSION_URL + '?t=' + Date.now());
-            if (!resp.ok) { updateCheckResult = 'Ошибка проверки'; return; }
+            if (!resp.ok) { updateCheckResult = '⚠️ Ошибка проверки'; updateStatusUI(); return; }
             const latest = (await resp.text()).trim();
             
             if (latest !== CURRENT_VERSION) {
                 updateCheckResult = `🔄 Доступно ${latest}`;
-                if (!localStorage.getItem('ozon_crm_update_shown_' + latest)) {
-                    localStorage.setItem('ozon_crm_update_shown_' + latest, '1');
+                updateStatusUI();
+                if (!localStorage.getItem('ozon_update_notified_' + latest)) {
+                    localStorage.setItem('ozon_update_notified_' + latest, '1');
                     showUpdateNotification(latest);
                 }
             } else {
                 updateCheckResult = `✅ Версия ${CURRENT_VERSION} — актуальна`;
+                updateStatusUI();
             }
         } catch(e) {
-            updateCheckResult = '⚠️ Ошибка: ' + e.message;
+            updateCheckResult = '⚠️ ' + e.message;
+            updateStatusUI();
+        }
+    }
+
+    let updateCheckResult = '🔄 Нажмите для проверки';
+
+    function updateStatusUI() {
+        const el = document.getElementById('update-status');
+        if (el) el.textContent = updateCheckResult || '✅ Проверено';
+    }
+
+    async function performUpdate(latestVersion) {
+        showStatus('⬇️ Скачиваю обновление...');
+        
+        try {
+            const resp = await fetch(SCRIPT_URL + '?t=' + Date.now());
+            if (!resp.ok) throw new Error('Не удалось скачать обновление');
+            
+            const newCode = await resp.text();
+            
+            localStorage.setItem('ozon_pending_script', newCode);
+            localStorage.setItem('ozon_pending_version', latestVersion);
+            
+            showStatus(`✅ Версия ${latestVersion} загружена! Перезагружаю...`);
+            
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+            
+        } catch(e) {
+            showStatus('❌ Ошибка: ' + e.message);
         }
     }
 
@@ -55,14 +116,24 @@
                 <span style="color:${T.accent};font-weight:600;font-size:15px;">🔄 Обновление ${version}</span>
                 <button id="notif-close" style="background:none;border:none;color:${T.textMuted};cursor:pointer;font-size:18px;">✕</button>
             </div>
-            <div style="margin-bottom:10px;">Нажмите «Обновить» чтобы перезагрузить страницу с новой версией.</div>
-            <button id="notif-update" style="width:100%;background:linear-gradient(135deg,${T.accent},${T.accent2});color:white;border:none;padding:8px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">🔄 Обновить сейчас</button>`;
+            <div style="margin-bottom:10px;line-height:1.5;">
+                Доступна новая версия!<br>
+                Нажмите «Обновить» — код скачается с GitHub<br>
+                и страница перезагрузится с новой версией.
+            </div>
+            <button id="notif-update" style="width:100%;background:linear-gradient(135deg,${T.accent},${T.accent2});color:white;border:none;padding:8px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">⬇️ Скачать и обновить</button>`;
         document.body.appendChild(n);
+        
         document.getElementById('notif-close').onclick = () => n.remove();
-        document.getElementById('notif-update').onclick = () => { localStorage.removeItem('ozon_crm_update_shown_' + version); location.reload(); };
+        document.getElementById('notif-update').onclick = function() {
+            n.remove();
+            performUpdate(version);
+        };
     }
 
     function forceCheckUpdate() {
+        updateCheckResult = '🔍 Проверка...';
+        updateStatusUI();
         checkForUpdates();
         showStatus('🔍 Проверяю обновления...');
     }
@@ -375,6 +446,7 @@
                 </details>
                 <div style="margin-top:8px;padding-top:6px;border-top:1px solid ${T.inputBorder};">
                     <div style="font-size:10px;color:${T.textMuted};text-align:center;" id="update-status">${updateCheckResult || '🔄 Нажмите кнопку в шапке для проверки'}</div>
+                    <div style="font-size:9px;color:${T.textMuted};text-align:center;margin-top:2px;">v${CURRENT_VERSION}</div>
                 </div>
             </div>`;
 
@@ -389,16 +461,12 @@
         toggleBtn.onclick = function() { const v = container.style.display !== 'none'; container.style.display = v ? 'none' : 'block'; toggleBtn.style.display = v ? 'flex' : 'none'; };
         document.body.appendChild(toggleBtn);
 
-        // ===== Кнопка проверки обновлений =====
-        document.getElementById('check-update-btn').onclick = async function() {
-            const statusEl = document.getElementById('update-status');
-            if (statusEl) statusEl.textContent = '🔍 Проверка...';
-            await checkForUpdates();
-            if (statusEl) statusEl.textContent = updateCheckResult || '✅ Проверено';
-            showStatus('🔍 ' + (updateCheckResult || 'Проверено'));
+        // Кнопка проверки обновлений
+        document.getElementById('check-update-btn').onclick = function() {
+            forceCheckUpdate();
         };
 
-        // ===== КАЛЬКУЛЯТОР =====
+        // Калькулятор
         let cur = '0', prev = '', op = null, reset = false;
         function upd() { const d = document.getElementById('calc-display'); if (d) d.textContent = cur; }
         document.querySelectorAll('.calc-btn').forEach(b => {
@@ -424,7 +492,7 @@
         document.getElementById('calc-copy').onclick=function(){navigator.clipboard.writeText(cur).then(()=>{this.textContent='✅ Скопировано!';setTimeout(()=>this.textContent='📋 Копировать',2000);});};
         document.getElementById('calc-paste').onclick=function(){if(smartPasteToChat(cur)){this.textContent='✅ Вставлено!';setTimeout(()=>this.textContent='📩 В чат',2000);}};
 
-        // ===== РЕЖИМЫ =====
+        // Режимы
         const pm=document.getElementById('paraphrase-mode'),cm=document.getElementById('chat-mode'),cam=document.getElementById('calculator-mode'),mt=document.getElementById('mode-toggle'),ct=document.getElementById('calc-toggle'),ht=document.getElementById('header-title');
         let co=false;
         function sm(){chatMode=!chatMode;pm.style.display=chatMode?'none':'block';cm.style.display=chatMode?'block':'none';cam.style.display='none';co=false;mt.textContent=chatMode?'✏️ Перефразировать':'💬 Чат';ht.textContent=chatMode?'✦ Чат с ИИ':'✦ Помощник';settings.mode=chatMode?'chat':'paraphrase';saveSettings();}
@@ -432,7 +500,7 @@
         mt.onclick=sm;ct.onclick=tc;
         if(chatMode){pm.style.display='none';cm.style.display='block';mt.textContent='✏️';ht.textContent='✦ Чат';}
 
-        // ===== ЧАТ =====
+        // Чат
         const cmsg=document.getElementById('chat-messages'),cinp=document.getElementById('chat-input'),csnd=document.getElementById('chat-send');
         function acm(r,t){chatHistory.push({role:r,text:t});const d=document.createElement('div');d.style.cssText=`margin-bottom:8px;padding:6px 8px;border-radius:8px;font-size:12px;`;if(r==='user'){d.style.cssText+=`background:${T.primaryBg};border:1px solid ${T.primaryBorder};text-align:right;`;d.innerHTML=`<div style="color:${T.text};">${t}</div>`;}else{d.style.cssText+=`background:${T.resultBg};border:1px solid ${T.inputBorder};`;d.innerHTML=`<div style="color:${T.accent};font-size:10px;margin-bottom:2px;">🤖</div><div style="color:${T.text};">${t}</div>`;}cmsg.appendChild(d);cmsg.scrollTop=cmsg.scrollHeight;}
         function cc(){cmsg.innerHTML='<div style="color:'+T.textMuted+';text-align:center;padding:20px;">Задайте вопрос 👇</div>';chatHistory=[];}
@@ -441,7 +509,7 @@
         document.getElementById('chat-clear').onclick=cc;
         document.getElementById('chat-copy-all').onclick=function(){navigator.clipboard.writeText(chatHistory.map(m=>`${m.role==='user'?'Вы':'ИИ'}: ${m.text}`).join('\n\n')).then(()=>{this.textContent='✅ Скопировано!';setTimeout(()=>this.textContent='📋 Копировать',2000);});};
 
-        // ===== ШАБЛОНЫ =====
+        // Шаблоны
         function renderTemplates(){const l=document.getElementById('templates-list');if(!l)return;if(!settings.templates.length){l.innerHTML='<div style="color:'+T.textMuted+';font-size:11px;text-align:center;padding:10px;">Нет шаблонов. Нажмите ➕ чтобы добавить</div>';return;}l.innerHTML=settings.templates.map((t,i)=>`
             <div style="background:${T.inputBg};border-radius:6px;padding:6px;margin-bottom:4px;border:1px solid ${T.inputBorder};font-size:11px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
@@ -461,7 +529,7 @@
         document.getElementById('btn-cancel-tpl').onclick=function(){document.getElementById('add-template-form').style.display='none';};
         document.getElementById('btn-save-tpl').onclick=function(){const n=document.getElementById('tpl-name').value.trim(),p=document.getElementById('tpl-prompt').value.trim(),t=document.getElementById('tpl-text').value.trim(),eid=document.getElementById('tpl-edit-id').value;if(!n||!p||!t){alert('Заполните все поля');return;}if(eid){const idx=settings.templates.findIndex(x=>x.id===eid);if(idx!==-1){settings.templates[idx].name=n;settings.templates[idx].prompt=p;settings.templates[idx].template=t;showStatus('✅ Шаблон обновлён');}}else{settings.templates.push({id:'c_'+Date.now(),name:n,prompt:p,template:t,enabled:true});showStatus('✅ Шаблон добавлен');}saveSettings();renderTemplates();document.getElementById('btn-cancel-tpl').click();};
 
-        // ===== ОБЩИЕ ОБРАБОТЧИКИ =====
+        // Общие обработчики
         document.getElementById('main-close').onclick=function(){container.style.display='none';toggleBtn.style.display='flex';};
         let minimized=false;
         document.getElementById('main-minimize').onclick=function(){minimized=!minimized;body.style.display=minimized?'none':'block';this.textContent=minimized?'□':'—';};
@@ -516,7 +584,7 @@
         document.getElementById('btn-clear-history').onclick=function(){history=[];localStorage.setItem('ozon_crm_history','[]');renderHistory();showStatus('🗑 История очищена');};
         function renderHistory(){const l=document.getElementById('history-list');if(!l)return;if(!history.length){l.innerHTML='<div style="color:'+T.textMuted+';font-size:11px;text-align:center;padding:15px;">История пуста</div>';return;}l.innerHTML=history.slice(0,10).map(i=>`<div style="background:${T.inputBg};border-radius:6px;padding:7px;margin-bottom:4px;cursor:pointer;border:1px solid ${T.inputBorder};font-size:11px;" onclick="document.getElementById('paraphrase-input').value='${i.text.replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/\n/g,'\\n')}';showStatus('✅ Из истории');"><div style="display:flex;justify-content:space-between;color:${T.textMuted};font-size:10px;margin-bottom:3px;"><span>${i.type}</span><span>${i.date}</span></div><div style="color:${T.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.text.substring(0,80)}${i.text.length>80?'...':''}</div></div>`).join('');}
 
-        console.log('✅ Ozon CRM v9.8 — всё работает!');
+        console.log('✅ Ozon CRM v10.0 — полное автообновление!');
     }, 2000);
 
     // ========== АВТОЗАПУСК ==========
