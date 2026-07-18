@@ -14,7 +14,6 @@
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
     const CURRENT_VERSION = '9.6';
-    const GITHUB_TOKEN = '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';
     const API_URL = 'https://models.inference.ai.azure.com/chat/completions';
     const API_MODEL = 'gpt-4o-mini';
     const SCRIPT_START_TIME = Date.now();
