@@ -16,7 +16,7 @@
     // ⚠️ ЗАМЕНИ НА СВОЙ GITHUB
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
-    const CURRENT_VERSION = '9.3';
+    const CURRENT_VERSION = '1.0';
     const SCRIPT_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/content.js`;
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
 
