@@ -2,7 +2,7 @@
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
 // @version      10.7
-// @description  ВЫДЕЛЕНИЕ + АНАЛИЗ + ИИ
+// @description  АНАЛИЗ ПО ШАБЛОНАМ + СПРОСИТЬ ИИ
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -48,11 +48,13 @@
     // ========== ВЫДЕЛЕНИЕ ТЕКСТА И ПОПАП ==========
     let selectionPopup = null;
     let selectionAskPopup = null;
+    let selectionTemplatePopup = null;
     
     document.addEventListener('mouseup', function(e) {
         // Удаляем старые попапы
         selectionPopup?.remove();
         selectionAskPopup?.remove();
+        selectionTemplatePopup?.remove();
         
         const sel = window.getSelection();
         const text = sel?.toString().trim();
@@ -67,11 +69,12 @@
         // Кнопка "Анализ"
         selectionPopup = document.createElement('div');
         selectionPopup.id = 'selection-popup';
-        selectionPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;`;
-        selectionPopup.textContent = '🔍 Анализ';
+        selectionPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;border-left:3px solid #6366f1;`;
+        selectionPopup.innerHTML = '<span style="font-weight:500;">🔍</span> Анализ';
         selectionPopup.onclick = function() {
             this.remove();
-            analyzeSelectedText(text);
+            selectionAskPopup?.remove();
+            analyzeForTemplate(text);
         };
         document.body.appendChild(selectionPopup);
         
@@ -79,21 +82,23 @@
         if (settings.askAIEnabled) {
             selectionAskPopup = document.createElement('div');
             selectionAskPopup.id = 'selection-ask-popup';
-            selectionAskPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 80}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;`;
-            selectionAskPopup.textContent = '🤖 Спросить ИИ';
+            selectionAskPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 85}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;`;
+            selectionAskPopup.innerHTML = '<span style="font-weight:500;">🤖</span> Спросить ИИ';
             selectionAskPopup.onclick = function() {
                 this.remove();
+                selectionPopup?.remove();
                 askAboutSelectedText(text);
             };
             document.body.appendChild(selectionAskPopup);
         }
         
-        // Автоскрытие при клике в другое место
+        // Автоскрытие
         setTimeout(() => {
             const closer = (event) => {
-                if (!event.target?.closest('#selection-popup') && !event.target?.closest('#selection-ask-popup')) {
+                if (!event.target?.closest('#selection-popup') && !event.target?.closest('#selection-ask-popup') && !event.target?.closest('#template-popup')) {
                     selectionPopup?.remove();
                     selectionAskPopup?.remove();
+                    selectionTemplatePopup?.remove();
                     document.removeEventListener('mousedown', closer);
                 }
             };
@@ -101,43 +106,154 @@
         }, 10);
     });
 
-    // Функция анализа выделенного текста
-    async function analyzeSelectedText(text) {
-        try {
-            const result = await askAI([
-                { role: 'system', content: 'Ты помощник, который анализирует текст и даёт краткий анализ: тональность, ключевые мысли, возможные проблемы. Отвечай на русском, 2-3 предложения.' },
-                { role: 'user', content: `Проанализируй этот текст:\n\n"${text}"` }
-            ]);
+    // ========== АНАЛИЗ ПО ШАБЛОНАМ ==========
+    function analyzeForTemplate(text) {
+        const lowerText = text.toLowerCase();
+        
+        // Ищем совпадение среди шаблонов
+        const found = settings.templates.find(t => {
+            if (!t.enabled) return false;
+            const lowerName = t.name.toLowerCase();
+            const lowerPrompt = t.prompt.toLowerCase();
+            const lowerTemplate = t.template.toLowerCase();
             
-            // Показываем результат в нашем интерфейсе
-            const input = document.getElementById('paraphrase-input');
-            if (input) input.value = text;
-            
-            const resultDiv = document.getElementById('paraphrase-result-text');
-            const resultContainer = document.getElementById('paraphrase-result');
-            if (resultDiv && resultContainer) {
-                resultDiv.textContent = '🔍 Анализ:\n' + result;
-                resultContainer.style.display = 'block';
-            }
-            
-            showStatus('✅ Анализ готов');
-        } catch(e) {
-            showStatus('❌ ' + e.message);
+            // Проверяем, есть ли ключевые слова из текста в шаблоне или наоборот
+            return lowerText.includes(lowerPrompt) || 
+                   lowerPrompt.includes(lowerText) ||
+                   lowerText.includes(lowerName) ||
+                   lowerName.includes(lowerText);
+        });
+        
+        if (found) {
+            // Показываем попап с найденным шаблоном
+            showTemplatePopup(found, text);
+        } else {
+            // Ничего не нашли
+            showTemplateNotFound(text);
         }
     }
 
-    // Функция отправки выделенного текста в чат с ИИ
-    async function askAboutSelectedText(text) {
+    function showTemplatePopup(template, originalText) {
+        selectionTemplatePopup?.remove();
+        
+        const T = getThemeColors();
+        
+        const popup = document.createElement('div');
+        popup.id = 'template-popup';
+        popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:380px;z-index:99999999;animation:slideIn 0.3s ease;`;
+        popup.innerHTML = `
+            <div style="background:${T.bg2};border:1px solid ${T.border};border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="width:32px;height:32px;background:linear-gradient(135deg,${T.accent},${T.accent2});border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">✓</div>
+                        <div>
+                            <div style="font-weight:600;font-size:13px;color:${T.text};">Найден шаблон</div>
+                            <div style="color:${T.muted};font-size:11px;">${template.name}</div>
+                        </div>
+                    </div>
+                    <button id="tpl-popup-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;">✕</button>
+                </div>
+                <div style="background:${T.bg};border:1px solid ${T.border};border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;color:${T.text};max-height:100px;overflow-y:auto;">
+                    ${template.template}
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button id="tpl-popup-copy" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Скопировать</button>
+                    <button id="tpl-popup-paste" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 Вставить в чат</button>
+                    <button id="tpl-popup-edit" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">✏️</button>
+                </div>
+            </div>`;
+        document.body.appendChild(popup);
+        
+        document.getElementById('tpl-popup-close').onclick = () => popup.remove();
+        document.getElementById('tpl-popup-copy').onclick = function() {
+            navigator.clipboard.writeText(template.template);
+            this.textContent = '✅';
+            setTimeout(() => this.textContent = '📋 Скопировать', 1500);
+        };
+        document.getElementById('tpl-popup-paste').onclick = function() {
+            if (smartPasteToChat(template.template)) {
+                this.textContent = '✅';
+                setTimeout(() => this.textContent = '📩 Вставить в чат', 1500);
+                setTimeout(() => popup.remove(), 2000);
+            }
+        };
+        document.getElementById('tpl-popup-edit').onclick = function() {
+            popup.remove();
+            document.getElementById('paraphrase-input').value = template.template;
+            // Открываем панель помощьника если закрыта
+            const container = document.getElementById('paraphrase-container');
+            if (container && container.style.display === 'none') {
+                document.getElementById('paraphrase-toggle-btn')?.click();
+            }
+        };
+    }
+
+    function showTemplateNotFound(text) {
+        const T = getThemeColors();
+        
+        const popup = document.createElement('div');
+        popup.id = 'template-popup';
+        popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:320px;z-index:99999999;animation:slideIn 0.3s ease;`;
+        popup.innerHTML = `
+            <div style="background:${T.bg2};border:1px solid #eab308;border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="width:32px;height:32px;background:#eab308;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">?</div>
+                        <div>
+                            <div style="font-weight:600;font-size:13px;color:${T.text};">Ничего не найдено</div>
+                            <div style="color:${T.muted};font-size:11px;">Нет подходящего шаблона</div>
+                        </div>
+                    </div>
+                    <button id="tpl-popup-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;">✕</button>
+                </div>
+                <div style="color:${T.muted};font-size:11px;line-height:1.5;margin-bottom:10px;padding:8px;background:${T.bg};border-radius:8px;">
+                    Выделенный текст не совпал ни с одним шаблоном. Вы можете создать новый шаблон или воспользоваться перефразированием.
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button id="tpl-popup-paraphrase" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">⟳ Перефразировать</button>
+                    <button id="tpl-popup-close-btn" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">✕ Закрыть</button>
+                </div>
+            </div>`;
+        document.body.appendChild(popup);
+        
+        document.getElementById('tpl-popup-close').onclick = () => popup.remove();
+        document.getElementById('tpl-popup-close-btn').onclick = () => popup.remove();
+        document.getElementById('tpl-popup-paraphrase').onclick = function() {
+            popup.remove();
+            document.getElementById('paraphrase-input').value = text;
+            const container = document.getElementById('paraphrase-container');
+            if (container && container.style.display === 'none') {
+                document.getElementById('paraphrase-toggle-btn')?.click();
+            }
+            // Автоматически запускаем перефразирование
+            setTimeout(() => document.getElementById('btn-submit')?.click(), 300);
+        };
+    }
+
+    function getThemeColors() {
+        return themes[settings.theme] || themes.dark;
+    }
+
+    // ========== ФУНКЦИЯ "СПРОСИТЬ ИИ" ==========
+    function askAboutSelectedText(text) {
         // Переключаемся в режим чата
         if (currentMode !== 'chat') {
             document.getElementById('mode-toggle')?.click();
+            // Небольшая задержка, чтобы интерфейс переключился
+            setTimeout(() => {
+                sendToChat(text);
+            }, 200);
+        } else {
+            sendToChat(text);
         }
-        
-        // Отправляем сообщение в чат
+    }
+
+    function sendToChat(text) {
         const chatInput = document.getElementById('chat-input');
-        if (chatInput) {
+        const chatSend = document.getElementById('chat-send');
+        if (chatInput && chatSend) {
             chatInput.value = 'Проанализируй этот текст и дай рекомендации:\n\n' + text;
-            document.getElementById('chat-send')?.click();
+            chatSend.click();
         }
     }
 
@@ -145,7 +261,7 @@
     const animStyle = document.createElement('style');
     animStyle.textContent = `
         @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-        @keyframes slideIn { from { transform:translateX(120px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         @keyframes scaleIn { from { transform:scale(0.92); opacity:0; } to { transform:scale(1); opacity:1; } }
     `;
@@ -155,9 +271,11 @@
     function loadSettings() {
         const d = { greetingEnabled: true, askAIEnabled: true, theme: 'dark', maxHistory: 15, autoCopy: false,
             templates: [
-                { id: 'nd', name: 'Не получил заказ', prompt: 'Клиент не получил заказ', template: 'Здравствуйте! Проверим статус вашего заказа.', enabled: true },
-                { id: 'cancel', name: 'Отмена заказа', prompt: 'Клиент хочет отменить', template: 'Здравствуйте! Подготовим отмену.', enabled: true },
-                { id: 'quality', name: 'Качество товара', prompt: 'Клиент жалуется на качество', template: 'Здравствуйте! Приносим извинения.', enabled: true }
+                { id: 'nd', name: 'Не получил заказ', prompt: 'не получил заказ', template: 'Здравствуйте! Проверим статус вашего заказа. Уточните, пожалуйста, номер заказа.', enabled: true },
+                { id: 'cancel', name: 'Отмена заказа', prompt: 'отменить заказ', template: 'Здравствуйте! Подготовим отмену заказа. Уточните причину отмены.', enabled: true },
+                { id: 'quality', name: 'Качество товара', prompt: 'качество товара', template: 'Здравствуйте! Приносим извинения за качество. Оформим возврат или замену.', enabled: true },
+                { id: 'delivery', name: 'Доставка', prompt: 'доставка', template: 'Здравствуйте! Проверим статус доставки вашего заказа.', enabled: true },
+                { id: 'refund', name: 'Возврат', prompt: 'возврат', template: 'Здравствуйте! Оформим возврат. Уточните причину возврата.', enabled: true }
             ],
             hotkeys: { paraphrase: 'Enter', retry: 'r', copyFromChat: 'c', pasteToChat: 'v', toggleGreeting: 'g', quickFriendly: '1', quickProfessional: '2', quickShort: '3', quickPolite: '4' },
             stats: { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }
@@ -222,7 +340,7 @@
         container.id = 'paraphrase-container';
         container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:85vh;background:${T.bg2};border:1px solid ${T.border};border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,0.5);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:${T.text};flex-direction:column;animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1);`;
 
-        // ШАПКА
+        // ШАПКА (такая же как в последней рабочей версии)
         const header = document.createElement('div');
         header.style.cssText = `padding:10px 14px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid ${T.border};background:${T.bg};`;
         header.innerHTML = `
@@ -243,7 +361,7 @@
                 <button id="main-close" style="background:${T.red};border:none;color:#fff;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;font-weight:bold;">✕</button>
             </div>`;
 
-        // ТЕЛО
+        // ТЕЛО (такое же)
         const body = document.createElement('div');
         body.style.cssText = `padding:12px 14px;overflow-y:auto;flex:1;max-height:calc(85vh - 46px);`;
 
@@ -327,7 +445,7 @@
                     <div id="templates-list"></div>
                     <div id="add-template-form" style="display:none;margin-top:8px;padding:10px;background:${T.bg};border-radius:8px;border:1px solid ${T.border};">
                         <input type="text" id="tpl-name" placeholder="Название" style="width:100%;padding:6px 10px;border:1px solid ${T.border};border-radius:6px;font-size:11px;outline:none;background:${T.card};color:${T.text};margin-bottom:4px;">
-                        <textarea id="tpl-prompt" placeholder="Описание для ИИ" style="width:100%;min-height:28px;padding:6px 10px;border:1px solid ${T.border};border-radius:6px;font-size:10px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:4px;"></textarea>
+                        <textarea id="tpl-prompt" placeholder="Ключевые слова для поиска" style="width:100%;min-height:28px;padding:6px 10px;border:1px solid ${T.border};border-radius:6px;font-size:10px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:4px;"></textarea>
                         <textarea id="tpl-text" placeholder="Текст шаблона" style="width:100%;min-height:40px;padding:6px 10px;border:1px solid ${T.border};border-radius:6px;font-size:10px;outline:none;background:${T.card};color:${T.text};resize:vertical;margin-bottom:6px;"></textarea>
                         <input type="hidden" id="tpl-edit-id" value="">
                         <div style="display:flex;gap:6px;"><button id="btn-save-tpl" style="flex:1;padding:6px;border-radius:6px;font-size:11px;cursor:pointer;background:${T.green};color:#fff;border:none;">💾 Сохранить</button><button id="btn-cancel-tpl" style="flex:1;padding:6px;border-radius:6px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.red};color:${T.red};">✕</button></div>
@@ -358,7 +476,6 @@
                     <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:6px;"><input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};"> Автоприветствие</label>
                     <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:6px;"><input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};"> Автокопировать</label>
                     
-                    <!-- ===== НОВЫЙ ЧЕКБОКС: Спросить ИИ ===== -->
                     <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:10px;background:${T.bg};padding:6px 10px;border-radius:6px;border:1px solid ${T.border};">
                         <input type="checkbox" id="chk-ask-ai" ${settings.askAIEnabled?'checked':''} style="accent-color:${T.accent};">
                         <span>🤖 Кнопка «Спросить ИИ» при выделении</span>
@@ -391,16 +508,12 @@
         let minimized = false;
         document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
 
-        // ===== ОБНОВЛЕНИЕ (только проверка, кнопка в шапке) =====
-        // Проверка обновлений будет вызвана в конце
-
-        // ===== НАСТРОЙКИ: ЧЕКБОКС "Спросить ИИ" =====
+        // ===== НАСТРОЙКИ =====
         document.getElementById('chk-ask-ai').onchange = function() {
             settings.askAIEnabled = this.checked;
             saveSettings();
         };
 
-        // ===== КНОПКА В НАСТРОЙКАХ =====
         document.getElementById('settings-releases-btn').onclick = function() {
             window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases`, '_blank');
         };
@@ -472,6 +585,6 @@
         // Проверка обновлений
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
-        console.log('✅ Ozon CRM v10.7 — ВЫДЕЛЕНИЕ + АНАЛИЗ + ИИ');
+        console.log('✅ Ozon CRM v10.7 — АНАЛИЗ ПО ШАБЛОНАМ + ИИ');
     }, 1500);
 })();
