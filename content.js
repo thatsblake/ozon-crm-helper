@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
-// @version      10.7
-// @description  АНАЛИЗ ПО ШАБЛОНАМ + СПРОСИТЬ ИИ
+// @version      10.8
+// @description  КНОПКИ РАБОТАЮТ
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -13,7 +13,7 @@
 
     const GITHUB_USER = 'thatsblake';
     const REPO_NAME = 'ozon-crm-helper';
-    const CURRENT_VERSION = '10.7';
+    const CURRENT_VERSION = '10.8';
     
     const GITHUB_TOKEN = 'ghp_' + 'MJxmRRjZ' + 'PmJUBgrYNxtFGY42xDRyiO28' + 'UFrI';
     const API_URL = 'https://models.inference.ai.azure.com/chat/completions';
@@ -45,79 +45,119 @@
         } catch(e) {}
     }
 
-    // ========== ВЫДЕЛЕНИЕ ТЕКСТА И ПОПАП ==========
-    let selectionPopup = null;
-    let selectionAskPopup = null;
-    let selectionTemplatePopup = null;
-    
+    // ========== ЗАГРУЗКА НАСТРОЕК ==========
+    function loadSettings() {
+        const d = { 
+            greetingEnabled: true, 
+            askAIEnabled: true, 
+            theme: 'dark', 
+            maxHistory: 15, 
+            autoCopy: false,
+            templates: [
+                { id: 'nd', name: 'Не получил заказ', prompt: 'не получил заказ', template: 'Здравствуйте! Проверим статус вашего заказа. Уточните, пожалуйста, номер заказа.', enabled: true },
+                { id: 'cancel', name: 'Отмена заказа', prompt: 'отменить заказ', template: 'Здравствуйте! Подготовим отмену заказа. Уточните причину отмены.', enabled: true },
+                { id: 'quality', name: 'Качество товара', prompt: 'качество товара', template: 'Здравствуйте! Приносим извинения за качество. Оформим возврат или замену.', enabled: true },
+                { id: 'delivery', name: 'Доставка', prompt: 'доставка', template: 'Здравствуйте! Проверим статус доставки вашего заказа.', enabled: true },
+                { id: 'refund', name: 'Возврат', prompt: 'возврат', template: 'Здравствуйте! Оформим возврат. Уточните причину возврата.', enabled: true }
+            ],
+            hotkeys: { paraphrase: 'Enter', retry: 'r', copyFromChat: 'c', pasteToChat: 'v', toggleGreeting: 'g', quickFriendly: '1', quickProfessional: '2', quickShort: '3', quickPolite: '4' },
+            stats: { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }
+        };
+        try { 
+            const s = JSON.parse(localStorage.getItem('ozon_crm_settings')); 
+            if (s) { 
+                if (!s.templates || !s.templates.length) s.templates = d.templates;
+                return s; 
+            } 
+        } catch(e) {}
+        return d;
+    }
+
+    let settings = loadSettings();
+    let history = (() => { try { return JSON.parse(localStorage.getItem('ozon_crm_history')) || []; } catch(e) { return []; } })();
+    let chatHistory = [];
+    let currentMode = 'paraphrase';
+    function saveSettings() { localStorage.setItem('ozon_crm_settings', JSON.stringify(settings)); }
+
+    const themes = {
+        dark: { name: '🌑 Тёмная', bg: '#0a0a0f', bg2: '#12121a', card: '#1a1a25', border: '#2a2a3a', text: '#f0f0f5', muted: '#6b6b80', accent: '#6366f1', accent2: '#8b5cf6', green: '#22c55e', red: '#ef4444' },
+        light: { name: '☀️ Светлая', bg: '#f8fafc', bg2: '#ffffff', card: '#ffffff', border: '#e2e8f0', text: '#0f172a', muted: '#94a3b8', accent: '#6366f1', accent2: '#8b5cf6', green: '#22c55e', red: '#ef4444' },
+        cyber: { name: '💚 Кибер', bg: '#0a0f0a', bg2: '#0f1a0f', card: '#0f1a0f', border: '#1a2a1a', text: '#ccffdd', muted: '#66aa77', accent: '#00ff88', accent2: '#00ccff', green: '#00ff88', red: '#ff3355' },
+        ocean: { name: '🌊 Океан', bg: '#0a0d1a', bg2: '#0a1a2e', card: '#0a1a2e', border: '#1a2a3e', text: '#cce8ff', muted: '#6699bb', accent: '#00ccff', accent2: '#0066ff', green: '#00ccff', red: '#ff4466' },
+        pink: { name: '💖 Нежный', bg: '#0d0d1a', bg2: '#1a1a2e', card: '#1a1a2e', border: '#3a2a3e', text: '#e8d5e0', muted: '#a88b9e', accent: '#ff6b9d', accent2: '#c084fc', green: '#ff6b9d', red: '#ff4d6d' }
+    };
+
+    // ========== ВЫДЕЛЕНИЕ ТЕКСТА ==========
     document.addEventListener('mouseup', function(e) {
-        // Удаляем старые попапы
-        selectionPopup?.remove();
-        selectionAskPopup?.remove();
-        selectionTemplatePopup?.remove();
+        const oldPopup = document.getElementById('selection-popup');
+        const oldAskPopup = document.getElementById('selection-ask-popup');
+        if (oldPopup) oldPopup.remove();
+        if (oldAskPopup) oldAskPopup.remove();
         
         const sel = window.getSelection();
         const text = sel?.toString().trim();
         if (!text || text.length < 3) return;
         
-        // Проверяем, что выделение не внутри нашего интерфейса
         if (e.target?.closest('#paraphrase-container')) return;
         
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         
         // Кнопка "Анализ"
-        selectionPopup = document.createElement('div');
-        selectionPopup.id = 'selection-popup';
-        selectionPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;border-left:3px solid #6366f1;`;
-        selectionPopup.innerHTML = '<span style="font-weight:500;">🔍</span> Анализ';
-        selectionPopup.onclick = function() {
+        const popup = document.createElement('div');
+        popup.id = 'selection-popup';
+        popup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;border-left:3px solid #6366f1;user-select:none;`;
+        popup.innerHTML = '<span style="font-weight:500;">🔍</span> Анализ';
+        popup.onclick = function(e) {
+            e.stopPropagation();
             this.remove();
-            selectionAskPopup?.remove();
+            const ask = document.getElementById('selection-ask-popup');
+            if (ask) ask.remove();
             analyzeForTemplate(text);
         };
-        document.body.appendChild(selectionPopup);
+        document.body.appendChild(popup);
         
-        // Кнопка "Спросить ИИ" (если включено в настройках)
+        // Кнопка "Спросить ИИ"
         if (settings.askAIEnabled) {
-            selectionAskPopup = document.createElement('div');
-            selectionAskPopup.id = 'selection-ask-popup';
-            selectionAskPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 85}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;`;
-            selectionAskPopup.innerHTML = '<span style="font-weight:500;">🤖</span> Спросить ИИ';
-            selectionAskPopup.onclick = function() {
+            const askPopup = document.createElement('div');
+            askPopup.id = 'selection-ask-popup';
+            askPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 85}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;user-select:none;`;
+            askPopup.innerHTML = '<span style="font-weight:500;">🤖</span> Спросить ИИ';
+            askPopup.onclick = function(e) {
+                e.stopPropagation();
                 this.remove();
-                selectionPopup?.remove();
+                const anal = document.getElementById('selection-popup');
+                if (anal) anal.remove();
                 askAboutSelectedText(text);
             };
-            document.body.appendChild(selectionAskPopup);
+            document.body.appendChild(askPopup);
         }
         
-        // Автоскрытие
+        // Скрытие при клике
         setTimeout(() => {
-            const closer = (event) => {
+            const handler = function(event) {
                 if (!event.target?.closest('#selection-popup') && !event.target?.closest('#selection-ask-popup') && !event.target?.closest('#template-popup')) {
-                    selectionPopup?.remove();
-                    selectionAskPopup?.remove();
-                    selectionTemplatePopup?.remove();
-                    document.removeEventListener('mousedown', closer);
+                    const p1 = document.getElementById('selection-popup');
+                    const p2 = document.getElementById('selection-ask-popup');
+                    if (p1) p1.remove();
+                    if (p2) p2.remove();
+                    document.removeEventListener('mousedown', handler);
                 }
             };
-            document.addEventListener('mousedown', closer);
+            document.addEventListener('mousedown', handler);
         }, 10);
     });
 
-    // ========== АНАЛИЗ ПО ШАБЛОНАМ ==========
+    // ========== ФУНКЦИЯ АНАЛИЗА ==========
     function analyzeForTemplate(text) {
         const lowerText = text.toLowerCase();
+        const enabledTemplates = settings.templates.filter(t => t.enabled);
         
-        // Ищем совпадение среди шаблонов
-        const found = settings.templates.find(t => {
-            if (!t.enabled) return false;
+        // Ищем совпадение
+        const found = enabledTemplates.find(t => {
             const lowerName = t.name.toLowerCase();
             const lowerPrompt = t.prompt.toLowerCase();
-            const lowerTemplate = t.template.toLowerCase();
             
-            // Проверяем, есть ли ключевые слова из текста в шаблоне или наоборот
             return lowerText.includes(lowerPrompt) || 
                    lowerPrompt.includes(lowerText) ||
                    lowerText.includes(lowerName) ||
@@ -125,16 +165,16 @@
         });
         
         if (found) {
-            // Показываем попап с найденным шаблоном
-            showTemplatePopup(found, text);
+            showTemplatePopup(found);
         } else {
-            // Ничего не нашли
             showTemplateNotFound(text);
         }
     }
 
-    function showTemplatePopup(template, originalText) {
-        selectionTemplatePopup?.remove();
+    // ========== ПОПАП С НАЙДЕННЫМ ШАБЛОНОМ ==========
+    function showTemplatePopup(template) {
+        const old = document.getElementById('template-popup');
+        if (old) old.remove();
         
         const T = getThemeColors();
         
@@ -171,7 +211,10 @@
             setTimeout(() => this.textContent = '📋 Скопировать', 1500);
         };
         document.getElementById('tpl-popup-paste').onclick = function() {
-            if (smartPasteToChat(template.template)) {
+            const f = document.querySelector('textarea[data-qa-id="chat-dialog.chat.textarea"]');
+            if (f) {
+                f.value = template.template;
+                f.dispatchEvent(new Event('input', { bubbles: true }));
                 this.textContent = '✅';
                 setTimeout(() => this.textContent = '📩 Вставить в чат', 1500);
                 setTimeout(() => popup.remove(), 2000);
@@ -180,7 +223,6 @@
         document.getElementById('tpl-popup-edit').onclick = function() {
             popup.remove();
             document.getElementById('paraphrase-input').value = template.template;
-            // Открываем панель помощьника если закрыта
             const container = document.getElementById('paraphrase-container');
             if (container && container.style.display === 'none') {
                 document.getElementById('paraphrase-toggle-btn')?.click();
@@ -188,12 +230,16 @@
         };
     }
 
+    // ========== ПОПАП "НИЧЕГО НЕ НАЙДЕНО" ==========
     function showTemplateNotFound(text) {
+        const old = document.getElementById('template-popup');
+        if (old) old.remove();
+        
         const T = getThemeColors();
         
         const popup = document.createElement('div');
         popup.id = 'template-popup';
-        popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:320px;z-index:99999999;animation:slideIn 0.3s ease;`;
+        popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:340px;z-index:99999999;animation:slideIn 0.3s ease;`;
         popup.innerHTML = `
             <div style="background:${T.bg2};border:1px solid #eab308;border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -225,24 +271,19 @@
             if (container && container.style.display === 'none') {
                 document.getElementById('paraphrase-toggle-btn')?.click();
             }
-            // Автоматически запускаем перефразирование
             setTimeout(() => document.getElementById('btn-submit')?.click(), 300);
         };
-    }
-
-    function getThemeColors() {
-        return themes[settings.theme] || themes.dark;
     }
 
     // ========== ФУНКЦИЯ "СПРОСИТЬ ИИ" ==========
     function askAboutSelectedText(text) {
         // Переключаемся в режим чата
         if (currentMode !== 'chat') {
-            document.getElementById('mode-toggle')?.click();
-            // Небольшая задержка, чтобы интерфейс переключился
+            const mt = document.getElementById('mode-toggle');
+            if (mt) mt.click();
             setTimeout(() => {
                 sendToChat(text);
-            }, 200);
+            }, 300);
         } else {
             sendToChat(text);
         }
@@ -257,6 +298,10 @@
         }
     }
 
+    function getThemeColors() {
+        return themes[settings.theme] || themes.dark;
+    }
+
     // ========== АНИМАЦИИ ==========
     const animStyle = document.createElement('style');
     animStyle.textContent = `
@@ -266,37 +311,6 @@
         @keyframes scaleIn { from { transform:scale(0.92); opacity:0; } to { transform:scale(1); opacity:1; } }
     `;
     document.head.appendChild(animStyle);
-
-    // ========== НАСТРОЙКИ ==========
-    function loadSettings() {
-        const d = { greetingEnabled: true, askAIEnabled: true, theme: 'dark', maxHistory: 15, autoCopy: false,
-            templates: [
-                { id: 'nd', name: 'Не получил заказ', prompt: 'не получил заказ', template: 'Здравствуйте! Проверим статус вашего заказа. Уточните, пожалуйста, номер заказа.', enabled: true },
-                { id: 'cancel', name: 'Отмена заказа', prompt: 'отменить заказ', template: 'Здравствуйте! Подготовим отмену заказа. Уточните причину отмены.', enabled: true },
-                { id: 'quality', name: 'Качество товара', prompt: 'качество товара', template: 'Здравствуйте! Приносим извинения за качество. Оформим возврат или замену.', enabled: true },
-                { id: 'delivery', name: 'Доставка', prompt: 'доставка', template: 'Здравствуйте! Проверим статус доставки вашего заказа.', enabled: true },
-                { id: 'refund', name: 'Возврат', prompt: 'возврат', template: 'Здравствуйте! Оформим возврат. Уточните причину возврата.', enabled: true }
-            ],
-            hotkeys: { paraphrase: 'Enter', retry: 'r', copyFromChat: 'c', pasteToChat: 'v', toggleGreeting: 'g', quickFriendly: '1', quickProfessional: '2', quickShort: '3', quickPolite: '4' },
-            stats: { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }
-        };
-        try { const s = JSON.parse(localStorage.getItem('ozon_crm_settings')); if (s) { return s; } } catch(e) {}
-        return d;
-    }
-
-    let settings = loadSettings();
-    let history = (() => { try { return JSON.parse(localStorage.getItem('ozon_crm_history')) || []; } catch(e) { return []; } })();
-    let chatHistory = [];
-    let currentMode = 'paraphrase';
-    function saveSettings() { localStorage.setItem('ozon_crm_settings', JSON.stringify(settings)); }
-
-    const themes = {
-        dark: { name: '🌑 Тёмная', bg: '#0a0a0f', bg2: '#12121a', card: '#1a1a25', border: '#2a2a3a', text: '#f0f0f5', muted: '#6b6b80', accent: '#6366f1', accent2: '#8b5cf6', green: '#22c55e', red: '#ef4444' },
-        light: { name: '☀️ Светлая', bg: '#f8fafc', bg2: '#ffffff', card: '#ffffff', border: '#e2e8f0', text: '#0f172a', muted: '#94a3b8', accent: '#6366f1', accent2: '#8b5cf6', green: '#22c55e', red: '#ef4444' },
-        cyber: { name: '💚 Кибер', bg: '#0a0f0a', bg2: '#0f1a0f', card: '#0f1a0f', border: '#1a2a1a', text: '#ccffdd', muted: '#66aa77', accent: '#00ff88', accent2: '#00ccff', green: '#00ff88', red: '#ff3355' },
-        ocean: { name: '🌊 Океан', bg: '#0a0d1a', bg2: '#0a1a2e', card: '#0a1a2e', border: '#1a2a3e', text: '#cce8ff', muted: '#6699bb', accent: '#00ccff', accent2: '#0066ff', green: '#00ccff', red: '#ff4466' },
-        pink: { name: '💖 Нежный', bg: '#0d0d1a', bg2: '#1a1a2e', card: '#1a1a2e', border: '#3a2a3e', text: '#e8d5e0', muted: '#a88b9e', accent: '#ff6b9d', accent2: '#c084fc', green: '#ff6b9d', red: '#ff4d6d' }
-    };
 
     // ========== АВТОПРИВЕТСТВИЕ ==========
     let currentName = '';
@@ -340,7 +354,7 @@
         container.id = 'paraphrase-container';
         container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:85vh;background:${T.bg2};border:1px solid ${T.border};border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,0.5);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:${T.text};flex-direction:column;animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1);`;
 
-        // ШАПКА (такая же как в последней рабочей версии)
+        // ШАПКА
         const header = document.createElement('div');
         header.style.cssText = `padding:10px 14px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid ${T.border};background:${T.bg};`;
         header.innerHTML = `
@@ -361,7 +375,7 @@
                 <button id="main-close" style="background:${T.red};border:none;color:#fff;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;font-weight:bold;">✕</button>
             </div>`;
 
-        // ТЕЛО (такое же)
+        // ТЕЛО
         const body = document.createElement('div');
         body.style.cssText = `padding:12px 14px;overflow-y:auto;flex:1;max-height:calc(85vh - 46px);`;
 
@@ -370,9 +384,6 @@
 
             <div id="paraphrase-mode">
                 <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:12px;margin-bottom:8px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <span style="font-size:10px;color:${T.muted};font-weight:500;">ВВЕДИТЕ ТЕКСТ ИЛИ ВЫДЕЛИТЕ НА СТРАНИЦЕ</span>
-                    </div>
                     <textarea id="paraphrase-input" style="width:100%;min-height:65px;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:vertical;outline:none;background:${T.bg};color:${T.text};font-family:inherit;box-sizing:border-box;" placeholder="Введите текст для перефразирования..."></textarea>
                 </div>
                 <div style="display:flex;gap:6px;margin-bottom:8px;">
@@ -493,7 +504,7 @@
         container.append(header, body);
         document.body.appendChild(container);
 
-        // ===== КНОПКА-КРУЖОК =====
+        // КНОПКА-КРУЖОК
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'paraphrase-toggle-btn';
         toggleBtn.innerHTML = '✦';
@@ -503,12 +514,11 @@
         toggleBtn.onclick = function() { const v = container.style.display !== 'none'; container.style.display = v ? 'none' : 'block'; toggleBtn.style.display = v ? 'flex' : 'none'; };
         document.body.appendChild(toggleBtn);
 
-        // ===== КНОПКИ =====
+        // КНОПКИ
         document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
         let minimized = false;
         document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
 
-        // ===== НАСТРОЙКИ =====
         document.getElementById('chk-ask-ai').onchange = function() {
             settings.askAIEnabled = this.checked;
             saveSettings();
@@ -518,11 +528,11 @@
             window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases`, '_blank');
         };
 
-        // ===== ПЕРЕТАСКИВАНИЕ =====
+        // ПЕРЕТАСКИВАНИЕ
         let dragging = false, ox, oy;
         header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON') return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
 
-        // ===== РЕЖИМЫ =====
+        // РЕЖИМЫ
         let calcOpen = false;
         const pm = document.getElementById('paraphrase-mode');
         const cm = document.getElementById('chat-mode');
@@ -537,7 +547,7 @@
         };
         ct.onclick = function() { calcOpen = !calcOpen; if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; } else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; } } };
 
-        // Панели
+        // ПАНЕЛИ
         let ap = null;
         document.querySelectorAll('.panel-btn').forEach(b => { b.onclick = function() { const p = this.dataset.p, el = document.getElementById('panel-' + p); if (ap === p) { el.style.display = 'none'; ap = null; } else { document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); el.style.display = 'block'; ap = p; if (p === 'history') renderHistory(); if (p === 'stats') renderStats(); if (p === 'templates') renderTemplates(); } }; });
 
@@ -585,6 +595,6 @@
         // Проверка обновлений
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
-        console.log('✅ Ozon CRM v10.7 — АНАЛИЗ ПО ШАБЛОНАМ + ИИ');
+        console.log('✅ Ozon CRM v10.8');
     }, 1500);
 })();
