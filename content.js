@@ -2,7 +2,7 @@
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
 // @version      10.7
-// @description  ИСПРАВЛЕНО — все кнопки помещаются
+// @description  ВЫДЕЛЕНИЕ + АНАЛИЗ + ИИ
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -31,22 +31,114 @@
             const latest = (await r.text()).trim();
             updateVersion = latest !== CURRENT_VERSION ? latest : null;
             
+            const old = document.getElementById('check-update-btn');
             if (updateVersion) {
-                document.getElementById('check-update-btn')?.remove();
-                // Показываем красную кнопку обновления в шапке
-                const updateBtn = document.createElement('button');
-                updateBtn.id = 'check-update-btn';
-                updateBtn.textContent = '⬇️';
-                updateBtn.title = 'Доступно обновление ' + updateVersion;
-                updateBtn.style.cssText = `background:#eab308;border:none;color:#fff;cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;animation:blink 1.5s infinite;`;
-                updateBtn.onclick = () => {
-                    window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases/tag/v${updateVersion}`, '_blank');
-                };
-                document.getElementById('header-buttons').prepend(updateBtn);
-            } else {
-                document.getElementById('check-update-btn')?.remove();
-            }
+                if (old) old.remove();
+                const btn = document.createElement('button');
+                btn.id = 'check-update-btn';
+                btn.textContent = '⬇️';
+                btn.title = 'Доступно обновление ' + updateVersion;
+                btn.style.cssText = `background:#eab308;border:none;color:#fff;cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;animation:blink 1.5s infinite;font-weight:bold;`;
+                btn.onclick = () => window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases/tag/v${updateVersion}`, '_blank');
+                document.getElementById('header-buttons')?.prepend(btn);
+            } else if (old) old.remove();
         } catch(e) {}
+    }
+
+    // ========== ВЫДЕЛЕНИЕ ТЕКСТА И ПОПАП ==========
+    let selectionPopup = null;
+    let selectionAskPopup = null;
+    
+    document.addEventListener('mouseup', function(e) {
+        // Удаляем старые попапы
+        selectionPopup?.remove();
+        selectionAskPopup?.remove();
+        
+        const sel = window.getSelection();
+        const text = sel?.toString().trim();
+        if (!text || text.length < 3) return;
+        
+        // Проверяем, что выделение не внутри нашего интерфейса
+        if (e.target?.closest('#paraphrase-container')) return;
+        
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        
+        // Кнопка "Анализ"
+        selectionPopup = document.createElement('div');
+        selectionPopup.id = 'selection-popup';
+        selectionPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;`;
+        selectionPopup.textContent = '🔍 Анализ';
+        selectionPopup.onclick = function() {
+            this.remove();
+            analyzeSelectedText(text);
+        };
+        document.body.appendChild(selectionPopup);
+        
+        // Кнопка "Спросить ИИ" (если включено в настройках)
+        if (settings.askAIEnabled) {
+            selectionAskPopup = document.createElement('div');
+            selectionAskPopup.id = 'selection-ask-popup';
+            selectionAskPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 80}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;`;
+            selectionAskPopup.textContent = '🤖 Спросить ИИ';
+            selectionAskPopup.onclick = function() {
+                this.remove();
+                askAboutSelectedText(text);
+            };
+            document.body.appendChild(selectionAskPopup);
+        }
+        
+        // Автоскрытие при клике в другое место
+        setTimeout(() => {
+            const closer = (event) => {
+                if (!event.target?.closest('#selection-popup') && !event.target?.closest('#selection-ask-popup')) {
+                    selectionPopup?.remove();
+                    selectionAskPopup?.remove();
+                    document.removeEventListener('mousedown', closer);
+                }
+            };
+            document.addEventListener('mousedown', closer);
+        }, 10);
+    });
+
+    // Функция анализа выделенного текста
+    async function analyzeSelectedText(text) {
+        try {
+            const result = await askAI([
+                { role: 'system', content: 'Ты помощник, который анализирует текст и даёт краткий анализ: тональность, ключевые мысли, возможные проблемы. Отвечай на русском, 2-3 предложения.' },
+                { role: 'user', content: `Проанализируй этот текст:\n\n"${text}"` }
+            ]);
+            
+            // Показываем результат в нашем интерфейсе
+            const input = document.getElementById('paraphrase-input');
+            if (input) input.value = text;
+            
+            const resultDiv = document.getElementById('paraphrase-result-text');
+            const resultContainer = document.getElementById('paraphrase-result');
+            if (resultDiv && resultContainer) {
+                resultDiv.textContent = '🔍 Анализ:\n' + result;
+                resultContainer.style.display = 'block';
+            }
+            
+            showStatus('✅ Анализ готов');
+        } catch(e) {
+            showStatus('❌ ' + e.message);
+        }
+    }
+
+    // Функция отправки выделенного текста в чат с ИИ
+    async function askAboutSelectedText(text) {
+        // Переключаемся в режим чата
+        if (currentMode !== 'chat') {
+            document.getElementById('mode-toggle')?.click();
+        }
+        
+        // Отправляем сообщение в чат
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) {
+            chatInput.value = 'Проанализируй этот текст и дай рекомендации:\n\n' + text;
+            document.getElementById('chat-send')?.click();
+        }
     }
 
     // ========== АНИМАЦИИ ==========
@@ -54,14 +146,14 @@
     animStyle.textContent = `
         @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         @keyframes slideIn { from { transform:translateX(120px); opacity:0; } to { transform:translateX(0); opacity:1; } }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         @keyframes scaleIn { from { transform:scale(0.92); opacity:0; } to { transform:scale(1); opacity:1; } }
     `;
     document.head.appendChild(animStyle);
 
     // ========== НАСТРОЙКИ ==========
     function loadSettings() {
-        const d = { greetingEnabled: true, theme: 'dark', maxHistory: 15, autoCopy: false,
+        const d = { greetingEnabled: true, askAIEnabled: true, theme: 'dark', maxHistory: 15, autoCopy: false,
             templates: [
                 { id: 'nd', name: 'Не получил заказ', prompt: 'Клиент не получил заказ', template: 'Здравствуйте! Проверим статус вашего заказа.', enabled: true },
                 { id: 'cancel', name: 'Отмена заказа', prompt: 'Клиент хочет отменить', template: 'Здравствуйте! Подготовим отмену.', enabled: true },
@@ -70,7 +162,7 @@
             hotkeys: { paraphrase: 'Enter', retry: 'r', copyFromChat: 'c', pasteToChat: 'v', toggleGreeting: 'g', quickFriendly: '1', quickProfessional: '2', quickShort: '3', quickPolite: '4' },
             stats: { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }
         };
-        try { const s = JSON.parse(localStorage.getItem('ozon_crm_settings')); if (s) { if (!s.stats) s.stats = d.stats; if (!s.hotkeys) s.hotkeys = d.hotkeys; if (!s.templates || !s.templates.length) s.templates = d.templates; return s; } } catch(e) {}
+        try { const s = JSON.parse(localStorage.getItem('ozon_crm_settings')); if (s) { return s; } } catch(e) {}
         return d;
     }
 
@@ -130,7 +222,7 @@
         container.id = 'paraphrase-container';
         container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:85vh;background:${T.bg2};border:1px solid ${T.border};border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,0.5);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:${T.text};flex-direction:column;animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1);`;
 
-        // ===== ШАПКА (УМЕНЬШЕННАЯ) =====
+        // ШАПКА
         const header = document.createElement('div');
         header.style.cssText = `padding:10px 14px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid ${T.border};background:${T.bg};`;
         header.innerHTML = `
@@ -147,12 +239,11 @@
                 <button class="panel-btn" data-p="history" style="background:none;border:none;color:${T.text};cursor:pointer;font-size:14px;padding:3px;">📚</button>
                 <button class="panel-btn" data-p="settings" style="background:none;border:none;color:${T.text};cursor:pointer;font-size:14px;padding:3px;">⚙️</button>
                 <div style="width:1px;height:16px;background:${T.border};margin:0 3px;"></div>
-                <button id="check-update-btn" style="background:none;border:none;color:${T.text};cursor:pointer;font-size:14px;padding:3px;" title="Проверить обновления">🔄</button>
                 <button id="main-minimize" style="background:none;border:none;color:${T.text};cursor:pointer;font-size:14px;padding:3px;font-weight:bold;">—</button>
                 <button id="main-close" style="background:${T.red};border:none;color:#fff;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;font-weight:bold;">✕</button>
             </div>`;
 
-        // ===== ТЕЛО =====
+        // ТЕЛО
         const body = document.createElement('div');
         body.style.cssText = `padding:12px 14px;overflow-y:auto;flex:1;max-height:calc(85vh - 46px);`;
 
@@ -161,6 +252,9 @@
 
             <div id="paraphrase-mode">
                 <div style="background:${T.card};border:1px solid ${T.border};border-radius:12px;padding:12px;margin-bottom:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <span style="font-size:10px;color:${T.muted};font-weight:500;">ВВЕДИТЕ ТЕКСТ ИЛИ ВЫДЕЛИТЕ НА СТРАНИЦЕ</span>
+                    </div>
                     <textarea id="paraphrase-input" style="width:100%;min-height:65px;padding:10px 12px;border:1px solid ${T.border};border-radius:8px;font-size:13px;resize:vertical;outline:none;background:${T.bg};color:${T.text};font-family:inherit;box-sizing:border-box;" placeholder="Введите текст для перефразирования..."></textarea>
                 </div>
                 <div style="display:flex;gap:6px;margin-bottom:8px;">
@@ -260,12 +354,19 @@
                     <div style="font-size:13px;font-weight:600;margin-bottom:10px;">⚙️ Настройки</div>
                     <div style="font-size:11px;color:${T.muted};margin-bottom:6px;">Тема</div>
                     <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;" id="theme-selector">${Object.entries(themes).map(([k,t]) => `<button class="theme-btn" data-theme="${k}" style="flex:1;min-width:60px;padding:4px;border-radius:6px;font-size:9px;cursor:pointer;border:1px solid ${settings.theme === k ? t.accent : T.border};background:${settings.theme === k ? t.accent : T.card};color:${settings.theme === k ? '#fff' : T.text};">${t.name}</button>`).join('')}</div>
+                    
                     <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:6px;"><input type="checkbox" id="chk-auto-greeting-settings" ${settings.greetingEnabled?'checked':''} style="accent-color:${T.accent};"> Автоприветствие</label>
-                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:10px;"><input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};"> Автокопировать</label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:6px;"><input type="checkbox" id="chk-autocopy" ${settings.autoCopy?'checked':''} style="accent-color:${T.accent};"> Автокопировать</label>
+                    
+                    <!-- ===== НОВЫЙ ЧЕКБОКС: Спросить ИИ ===== -->
+                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:10px;background:${T.bg};padding:6px 10px;border-radius:6px;border:1px solid ${T.border};">
+                        <input type="checkbox" id="chk-ask-ai" ${settings.askAIEnabled?'checked':''} style="accent-color:${T.accent};">
+                        <span>🤖 Кнопка «Спросить ИИ» при выделении</span>
+                    </label>
+                    
                     <details><summary style="font-size:11px;color:${T.muted};cursor:pointer;padding:6px 0;">⌨️ Горячие клавиши</summary>
                     <div style="margin-top:6px;padding:10px;background:${T.bg};border-radius:8px;border:1px solid ${T.border};font-size:11px;">${['paraphrase|⟳ Перефразировать','retry|🔄 Ещё вариант','copyFromChat|📋 Из чата','pasteToChat|📩 В чат','toggleGreeting|✨ Приветствие','quickFriendly|😊 Дружелюбный','quickProfessional|💼 Деловой','quickShort|✂️ Краткий','quickPolite|🙏 Вежливый'].map(x=>{const[k,l]=x.split('|');return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><span style="color:${T.muted};">${l}</span><input type="text" id="hk-${k}" value="${settings.hotkeys[k]||''}" style="width:45px;padding:2px 4px;border-radius:4px;border:1px solid ${T.border};background:${T.card};color:${T.text};text-align:center;font-size:10px;outline:none;"></div>`;}).join('\n')}<button id="btn-save-hotkeys" style="margin-top:6px;width:100%;padding:6px;border-radius:6px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">💾 Сохранить</button></div></details>
                     
-                    <!-- Кнопка релизов в настройках -->
                     <button id="settings-releases-btn" style="width:100%;margin-top:10px;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;font-weight:500;">📦 Последний релиз на GitHub</button>
                     
                     <div style="padding-top:10px;border-top:1px solid ${T.border};text-align:center;margin-top:10px;"><span style="font-size:10px;color:${T.muted};">v${CURRENT_VERSION}</span></div>
@@ -286,37 +387,17 @@
         document.body.appendChild(toggleBtn);
 
         // ===== КНОПКИ =====
-        document.getElementById('main-close').onclick = function() { 
-            container.style.display = 'none'; 
-            toggleBtn.style.display = 'flex'; 
-        };
-        
+        document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
         let minimized = false;
-        document.getElementById('main-minimize').onclick = function() { 
-            minimized = !minimized; 
-            body.style.display = minimized ? 'none' : 'block'; 
-            this.textContent = minimized ? '□' : '—'; 
-        };
+        document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
 
-        // ===== ОБНОВЛЕНИЕ =====
-        document.getElementById('check-update-btn').onclick = function() {
-            checkUpdates();
-            // Если нет обновления — через секунду покажем уведомление
-            setTimeout(() => {
-                if (!updateVersion) {
-                    // Показываем снизу плашку "Перейти к последнему релизу"
-                    const status = document.getElementById('status-message');
-                    if (status) {
-                        status.innerHTML = '📦 Версия актуальна. <a href="#" style="color:#6366f1;text-decoration:underline;" id="go-releases">Перейти к последнему релизу →</a>';
-                        status.style.display = 'block';
-                        document.getElementById('go-releases').onclick = (e) => {
-                            e.preventDefault();
-                            window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases`, '_blank');
-                        };
-                        setTimeout(() => status.style.display = 'none', 8000);
-                    }
-                }
-            }, 1500);
+        // ===== ОБНОВЛЕНИЕ (только проверка, кнопка в шапке) =====
+        // Проверка обновлений будет вызвана в конце
+
+        // ===== НАСТРОЙКИ: ЧЕКБОКС "Спросить ИИ" =====
+        document.getElementById('chk-ask-ai').onchange = function() {
+            settings.askAIEnabled = this.checked;
+            saveSettings();
         };
 
         // ===== КНОПКА В НАСТРОЙКАХ =====
@@ -326,25 +407,7 @@
 
         // ===== ПЕРЕТАСКИВАНИЕ =====
         let dragging = false, ox, oy;
-        header.onmousedown = function(e) { 
-            if (e.target.tagName === 'BUTTON') return; 
-            dragging = true; 
-            ox = e.clientX - container.getBoundingClientRect().left; 
-            oy = e.clientY - container.getBoundingClientRect().top; 
-            document.onmousemove = function(e) { 
-                if (dragging) { 
-                    container.style.left = (e.clientX - ox) + 'px'; 
-                    container.style.top = (e.clientY - oy) + 'px'; 
-                    container.style.right = 'auto'; 
-                    container.style.bottom = 'auto'; 
-                } 
-            }; 
-            document.onmouseup = function() { 
-                dragging = false; 
-                document.onmousemove = null; 
-                document.onmouseup = null; 
-            }; 
-        };
+        header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON') return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
 
         // ===== РЕЖИМЫ =====
         let calcOpen = false;
@@ -356,248 +419,44 @@
         const ht = document.getElementById('header-title');
 
         mt.onclick = function() {
-            if (currentMode === 'paraphrase') { 
-                currentMode = 'chat'; 
-                pm.style.display = 'none'; 
-                cm.style.display = 'block'; 
-                cam.style.display = 'none'; 
-                calcOpen = false; 
-                mt.textContent = '✏️ Перефразировать'; 
-                ht.textContent = 'Чат с ИИ'; 
-            } else { 
-                currentMode = 'paraphrase'; 
-                pm.style.display = 'block'; 
-                cm.style.display = 'none'; 
-                cam.style.display = 'none'; 
-                calcOpen = false; 
-                mt.textContent = '💬 Чат'; 
-                ht.textContent = 'Помощник'; 
-            }
+            if (currentMode === 'paraphrase') { currentMode = 'chat'; pm.style.display = 'none'; cm.style.display = 'block'; cam.style.display = 'none'; calcOpen = false; mt.textContent = '✏️ Перефразировать'; ht.textContent = 'Чат с ИИ'; } 
+            else { currentMode = 'paraphrase'; pm.style.display = 'block'; cm.style.display = 'none'; cam.style.display = 'none'; calcOpen = false; mt.textContent = '💬 Чат'; ht.textContent = 'Помощник'; }
         };
-
-        ct.onclick = function() { 
-            calcOpen = !calcOpen; 
-            if (calcOpen) { 
-                pm.style.display = 'none'; 
-                cm.style.display = 'none'; 
-                cam.style.display = 'block'; 
-                ht.textContent = 'Калькулятор'; 
-            } else { 
-                cam.style.display = 'none'; 
-                if (currentMode === 'chat') { 
-                    cm.style.display = 'block'; 
-                    ht.textContent = 'Чат с ИИ'; 
-                } else { 
-                    pm.style.display = 'block'; 
-                    ht.textContent = 'Помощник'; 
-                } 
-            } 
-        };
+        ct.onclick = function() { calcOpen = !calcOpen; if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; } else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; } } };
 
         // Панели
         let ap = null;
-        document.querySelectorAll('.panel-btn').forEach(b => { 
-            b.onclick = function() { 
-                const p = this.dataset.p, el = document.getElementById('panel-' + p); 
-                if (ap === p) { 
-                    el.style.display = 'none'; 
-                    ap = null; 
-                } else { 
-                    document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); 
-                    el.style.display = 'block'; 
-                    ap = p; 
-                    if (p === 'history') renderHistory(); 
-                    if (p === 'stats') renderStats(); 
-                    if (p === 'templates') renderTemplates(); 
-                } 
-            }; 
-        });
+        document.querySelectorAll('.panel-btn').forEach(b => { b.onclick = function() { const p = this.dataset.p, el = document.getElementById('panel-' + p); if (ap === p) { el.style.display = 'none'; ap = null; } else { document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); el.style.display = 'block'; ap = p; if (p === 'history') renderHistory(); if (p === 'stats') renderStats(); if (p === 'templates') renderTemplates(); } }; });
 
-        function renderStats() { 
-            const now = Date.now(), st = settings.stats, total = st.paraphrased + st.copied + st.pasted; 
-            document.getElementById('stats-content').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">${[['🔄 Перефразировано', st.paraphrased],['📋 Скопировано', st.copied],['📩 Вставлено', st.pasted],['❌ Ошибок', st.errors, st.errors > 3 ? T.red : T.text],['📝 Символов', (st.totalChars || 0).toLocaleString()],['⏱ Сессия', formatTime(now - (st.sessionStart || now))],['🧠 Работает', formatTime(now - SCRIPT_START_TIME)],['🎯 Действий', total, T.accent]].map(([l, v, c]) => `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="color:${T.muted};">${l}</span><span style="color:${c || T.text};font-weight:600;">${v}</span></div>`).join('')}</div><button id="btn-reset-stats" style="margin-top:6px;width:100%;padding:5px;border-radius:6px;font-size:10px;cursor:pointer;background:${T.card};border:1px solid ${T.red};color:${T.red};">🔄 Сбросить</button>`; 
-            document.getElementById('btn-reset-stats').onclick = function() { 
-                settings.stats = { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }; 
-                saveSettings(); 
-                renderStats(); 
-                showStatus('📊 Сброшено'); 
-            }; 
-        }
+        function renderStats() { const now = Date.now(), st = settings.stats, total = st.paraphrased + st.copied + st.pasted; document.getElementById('stats-content').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">${[['🔄 Перефразировано', st.paraphrased],['📋 Скопировано', st.copied],['📩 Вставлено', st.pasted],['❌ Ошибок', st.errors, st.errors > 3 ? T.red : T.text],['📝 Символов', (st.totalChars || 0).toLocaleString()],['⏱ Сессия', formatTime(now - (st.sessionStart || now))],['🧠 Работает', formatTime(now - SCRIPT_START_TIME)],['🎯 Действий', total, T.accent]].map(([l, v, c]) => `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="color:${T.muted};">${l}</span><span style="color:${c || T.text};font-weight:600;">${v}</span></div>`).join('')}</div><button id="btn-reset-stats" style="margin-top:6px;width:100%;padding:5px;border-radius:6px;font-size:10px;cursor:pointer;background:${T.card};border:1px solid ${T.red};color:${T.red};">🔄 Сбросить</button>`; document.getElementById('btn-reset-stats').onclick = function() { settings.stats = { paraphrased: 0, copied: 0, pasted: 0, opened: 0, errors: 0, totalChars: 0, sessionStart: Date.now() }; saveSettings(); renderStats(); showStatus('📊 Сброшено'); }; }
 
-        function renderTemplates() { 
-            const l = document.getElementById('templates-list'); 
-            if (!l) return; 
-            if (!settings.templates.length) { 
-                l.innerHTML = '<div style="color:' + T.muted + ';font-size:11px;text-align:center;padding:12px;">Нет шаблонов</div>'; 
-                return; 
-            } 
-            l.innerHTML = settings.templates.map((t, i) => `<div style="background:${T.bg};border-radius:8px;padding:6px 8px;margin-bottom:4px;border:1px solid ${T.border};font-size:11px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><span class="tpl-name" data-id="${t.id}" style="color:${T.text};font-weight:500;cursor:pointer;">${t.name} ✏️</span><div style="display:flex;gap:3px;"><button class="tpl-toggle" data-i="${i}" style="background:none;border:1px solid ${t.enabled ? T.green : T.red};color:${t.enabled ? T.green : T.red};padding:1px 5px;border-radius:4px;cursor:pointer;font-size:9px;">${t.enabled ? '✅' : '⛔'}</button><button class="tpl-del" data-i="${i}" style="background:none;border:none;color:${T.red};cursor:pointer;font-size:11px;">🗑</button></div></div><div style="color:${T.muted};font-size:9px;">${t.template.substring(0, 50)}${t.template.length > 50 ? '...' : ''}</div></div>`).join(''); 
-            document.querySelectorAll('.tpl-toggle').forEach(b => { b.onclick = function() { const i = parseInt(this.dataset.i); settings.templates[i].enabled = !settings.templates[i].enabled; saveSettings(); renderTemplates(); }; }); 
-            document.querySelectorAll('.tpl-del').forEach(b => { b.onclick = function() { settings.templates.splice(parseInt(this.dataset.i), 1); saveSettings(); renderTemplates(); }; }); 
-            document.querySelectorAll('.tpl-name').forEach(el => { el.onclick = function() { const id = this.dataset.id, tpl = settings.templates.find(t => t.id === id); if (tpl) { document.getElementById('add-template-form').style.display = 'block'; document.getElementById('tpl-name').value = tpl.name; document.getElementById('tpl-prompt').value = tpl.prompt; document.getElementById('tpl-text').value = tpl.template; document.getElementById('tpl-edit-id').value = tpl.id; document.getElementById('btn-save-tpl').textContent = '💾 Обновить'; } }; }); 
-        }
+        function renderTemplates() { const l = document.getElementById('templates-list'); if (!l) return; if (!settings.templates.length) { l.innerHTML = '<div style="color:' + T.muted + ';font-size:11px;text-align:center;padding:12px;">Нет шаблонов</div>'; return; } l.innerHTML = settings.templates.map((t, i) => `<div style="background:${T.bg};border-radius:8px;padding:6px 8px;margin-bottom:4px;border:1px solid ${T.border};font-size:11px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><span class="tpl-name" data-id="${t.id}" style="color:${T.text};font-weight:500;cursor:pointer;">${t.name} ✏️</span><div style="display:flex;gap:3px;"><button class="tpl-toggle" data-i="${i}" style="background:none;border:1px solid ${t.enabled ? T.green : T.red};color:${t.enabled ? T.green : T.red};padding:1px 5px;border-radius:4px;cursor:pointer;font-size:9px;">${t.enabled ? '✅' : '⛔'}</button><button class="tpl-del" data-i="${i}" style="background:none;border:none;color:${T.red};cursor:pointer;font-size:11px;">🗑</button></div></div><div style="color:${T.muted};font-size:9px;">${t.template.substring(0, 50)}${t.template.length > 50 ? '...' : ''}</div></div>`).join(''); document.querySelectorAll('.tpl-toggle').forEach(b => { b.onclick = function() { const i = parseInt(this.dataset.i); settings.templates[i].enabled = !settings.templates[i].enabled; saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-del').forEach(b => { b.onclick = function() { settings.templates.splice(parseInt(this.dataset.i), 1); saveSettings(); renderTemplates(); }; }); document.querySelectorAll('.tpl-name').forEach(el => { el.onclick = function() { const id = this.dataset.id, tpl = settings.templates.find(t => t.id === id); if (tpl) { document.getElementById('add-template-form').style.display = 'block'; document.getElementById('tpl-name').value = tpl.name; document.getElementById('tpl-prompt').value = tpl.prompt; document.getElementById('tpl-text').value = tpl.template; document.getElementById('tpl-edit-id').value = tpl.id; document.getElementById('btn-save-tpl').textContent = '💾 Обновить'; } }; }); }
 
-        // Обработчики
-        document.getElementById('btn-add-template').onclick = function() { 
-            const f = document.getElementById('add-template-form'); 
-            f.style.display = f.style.display === 'block' ? 'none' : 'block'; 
-            if (f.style.display === 'block') { 
-                document.getElementById('tpl-name').value = ''; 
-                document.getElementById('tpl-prompt').value = ''; 
-                document.getElementById('tpl-text').value = ''; 
-                document.getElementById('tpl-edit-id').value = ''; 
-                document.getElementById('btn-save-tpl').textContent = '💾 Сохранить'; 
-            } 
-        };
+        document.getElementById('btn-add-template').onclick = function() { const f = document.getElementById('add-template-form'); f.style.display = f.style.display === 'block' ? 'none' : 'block'; if (f.style.display === 'block') { document.getElementById('tpl-name').value = ''; document.getElementById('tpl-prompt').value = ''; document.getElementById('tpl-text').value = ''; document.getElementById('tpl-edit-id').value = ''; document.getElementById('btn-save-tpl').textContent = '💾 Сохранить'; } };
         document.getElementById('btn-cancel-tpl').onclick = function() { document.getElementById('add-template-form').style.display = 'none'; };
-        document.getElementById('btn-save-tpl').onclick = function() { 
-            const n = document.getElementById('tpl-name').value.trim(), p = document.getElementById('tpl-prompt').value.trim(), t = document.getElementById('tpl-text').value.trim(), eid = document.getElementById('tpl-edit-id').value; 
-            if (!n || !p || !t) { alert('Заполните все поля'); return; } 
-            if (eid) { 
-                const idx = settings.templates.findIndex(x => x.id === eid); 
-                if (idx !== -1) { 
-                    settings.templates[idx].name = n; settings.templates[idx].prompt = p; settings.templates[idx].template = t; 
-                    showStatus('✅ Обновлён'); 
-                } 
-            } else { 
-                settings.templates.push({ id: 'c_' + Date.now(), name: n, prompt: p, template: t, enabled: true }); 
-                showStatus('✅ Добавлен'); 
-            } 
-            saveSettings(); 
-            renderTemplates(); 
-            document.getElementById('btn-cancel-tpl').click(); 
-        };
+        document.getElementById('btn-save-tpl').onclick = function() { const n = document.getElementById('tpl-name').value.trim(), p = document.getElementById('tpl-prompt').value.trim(), t = document.getElementById('tpl-text').value.trim(), eid = document.getElementById('tpl-edit-id').value; if (!n || !p || !t) { alert('Заполните все поля'); return; } if (eid) { const idx = settings.templates.findIndex(x => x.id === eid); if (idx !== -1) { settings.templates[idx].name = n; settings.templates[idx].prompt = p; settings.templates[idx].template = t; showStatus('✅ Обновлён'); } } else { settings.templates.push({ id: 'c_' + Date.now(), name: n, prompt: p, template: t, enabled: true }); showStatus('✅ Добавлен'); } saveSettings(); renderTemplates(); document.getElementById('btn-cancel-tpl').click(); };
 
-        document.getElementById('greeting-toggle').onclick = function() { 
-            settings.greetingEnabled = !settings.greetingEnabled; 
-            saveSettings(); 
-            this.textContent = settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'; 
-            this.style.background = settings.greetingEnabled ? T.green : T.card; 
-            this.style.color = settings.greetingEnabled ? '#fff' : T.text; 
-            this.style.borderColor = settings.greetingEnabled ? T.green : T.border; 
-            document.getElementById('chk-auto-greeting-settings').checked = settings.greetingEnabled; 
-        };
+        document.getElementById('greeting-toggle').onclick = function() { settings.greetingEnabled = !settings.greetingEnabled; saveSettings(); this.textContent = settings.greetingEnabled ? '✨ Приветствие' : '🚫 Приветствие'; this.style.background = settings.greetingEnabled ? T.green : T.card; this.style.color = settings.greetingEnabled ? '#fff' : T.text; this.style.borderColor = settings.greetingEnabled ? T.green : T.border; document.getElementById('chk-auto-greeting-settings').checked = settings.greetingEnabled; };
         document.getElementById('chk-auto-greeting-settings').onchange = function() { document.getElementById('greeting-toggle').click(); };
         document.getElementById('chk-autocopy').onchange = function() { settings.autoCopy = this.checked; saveSettings(); };
         document.getElementById('btn-copy-from-chat').onclick = function() { const f = getChatField(); if (f && f.value) { document.getElementById('paraphrase-input').value = f.value; showStatus('✅ Из чата'); } };
         document.getElementById('btn-retry-last').onclick = function() { if (history.length) { document.getElementById('paraphrase-input').value = history[0].text; showStatus('✅ Из истории'); } else showStatus('📭 Пусто'); };
 
-        document.getElementById('btn-submit').onclick = async function() { 
-            const text = document.getElementById('paraphrase-input').value.trim(); 
-            if (!text) { alert('Введите текст'); return; } 
-            const style = document.getElementById('paraphrase-style').value, btn = this; 
-            btn.disabled = true; btn.textContent = '⏳...'; 
-            document.getElementById('paraphrase-loading').style.display = 'block'; 
-            document.getElementById('paraphrase-result').style.display = 'none'; 
-            try { 
-                const p = { professional: 'Перепиши в деловом стиле.', friendly: 'Перепиши дружелюбно.', short: 'Сократи до 2-3 предложений.', polite: 'Перепиши вежливо.', fix: 'Исправь ошибки.', original: 'Перефразируй.' }; 
-                const n = { professional: 'Деловой', friendly: 'Дружелюбный', short: 'Краткий', polite: 'Вежливый', fix: 'Исправление', original: 'Перефразирование' }; 
-                const r = await askAI([{ role: 'system', content: 'Отвечай ТОЛЬКО перефразированным текстом.' }, { role: 'user', content: `${p[style] || p.original}\n\nТекст: "${text}"` }]); 
-                document.getElementById('paraphrase-result-text').textContent = r; 
-                document.getElementById('paraphrase-result').style.display = 'block'; 
-                settings.stats.paraphrased++; settings.stats.totalChars += text.length; 
-                saveSettings(); addHistory(r, n[style] || style); showStatus('✅'); 
-                if (settings.autoCopy) navigator.clipboard.writeText(r); 
-            } catch (e) { 
-                document.getElementById('paraphrase-result-text').textContent = '❌ ' + e.message; 
-                document.getElementById('paraphrase-result').style.display = 'block'; 
-                settings.stats.errors++; saveSettings(); 
-            } finally { 
-                document.getElementById('paraphrase-loading').style.display = 'none'; 
-                btn.disabled = false; btn.textContent = '⟳ Выполнить'; 
-            } 
-        };
-
+        document.getElementById('btn-submit').onclick = async function() { const text = document.getElementById('paraphrase-input').value.trim(); if (!text) { alert('Введите текст'); return; } const style = document.getElementById('paraphrase-style').value, btn = this; btn.disabled = true; btn.textContent = '⏳...'; document.getElementById('paraphrase-loading').style.display = 'block'; document.getElementById('paraphrase-result').style.display = 'none'; try { const p = { professional: 'Перепиши в деловом стиле.', friendly: 'Перепиши дружелюбно.', short: 'Сократи до 2-3 предложений.', polite: 'Перепиши вежливо.', fix: 'Исправь ошибки.', original: 'Перефразируй.' }; const n = { professional: 'Деловой', friendly: 'Дружелюбный', short: 'Краткий', polite: 'Вежливый', fix: 'Исправление', original: 'Перефразирование' }; const r = await askAI([{ role: 'system', content: 'Отвечай ТОЛЬКО перефразированным текстом.' }, { role: 'user', content: `${p[style] || p.original}\n\nТекст: "${text}"` }]); document.getElementById('paraphrase-result-text').textContent = r; document.getElementById('paraphrase-result').style.display = 'block'; settings.stats.paraphrased++; settings.stats.totalChars += text.length; saveSettings(); addHistory(r, n[style] || style); showStatus('✅'); if (settings.autoCopy) navigator.clipboard.writeText(r); } catch (e) { document.getElementById('paraphrase-result-text').textContent = '❌ ' + e.message; document.getElementById('paraphrase-result').style.display = 'block'; settings.stats.errors++; saveSettings(); } finally { document.getElementById('paraphrase-loading').style.display = 'none'; btn.disabled = false; btn.textContent = '⟳ Выполнить'; } };
         document.getElementById('btn-retry').onclick = function() { document.getElementById('btn-submit').click(); };
         document.getElementById('btn-copy').onclick = function() { navigator.clipboard.writeText(document.getElementById('paraphrase-result-text').textContent).then(() => { this.textContent = '✅'; settings.stats.copied++; saveSettings(); setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
         document.getElementById('btn-paste').onclick = function() { if (smartPasteToChat(document.getElementById('paraphrase-result-text').textContent)) { this.textContent = '✅'; settings.stats.pasted++; saveSettings(); setTimeout(() => this.textContent = '📩 В чат', 2000); } };
-
-        document.querySelectorAll('.quick-tone').forEach(b => { 
-            b.onclick = function() { 
-                const t = document.getElementById('paraphrase-result-text'); 
-                if (t && t.textContent && !t.textContent.startsWith('❌')) { 
-                    document.getElementById('paraphrase-input').value = t.textContent; 
-                    document.getElementById('paraphrase-style').value = this.dataset.s; 
-                    document.getElementById('btn-submit').click(); 
-                } 
-            }; 
-        });
-
-        document.querySelectorAll('.theme-btn').forEach(b => { 
-            b.onclick = function() { 
-                settings.theme = this.dataset.theme; 
-                saveSettings(); 
-                showStatus('🎨 Тема изменена'); 
-                setTimeout(() => location.reload(), 500); 
-            }; 
-        });
-
-        document.getElementById('btn-save-hotkeys').onclick = function() { 
-            ['paraphrase', 'retry', 'copyFromChat', 'pasteToChat', 'toggleGreeting', 'quickFriendly', 'quickProfessional', 'quickShort', 'quickPolite'].forEach(f => { 
-                const e = document.getElementById('hk-' + f); 
-                if (e) settings.hotkeys[f] = e.value || ' '; 
-            }); 
-            saveSettings(); showStatus('✅ Хоткеи сохранены!'); 
-        };
-
-        document.getElementById('btn-clear-history').onclick = function() { 
-            history = []; 
-            localStorage.setItem('ozon_crm_history', '[]'); 
-            renderHistory(); 
-            showStatus('🗑'); 
-        };
-
-        function renderHistory() { 
-            const l = document.getElementById('history-list'); 
-            if (!l) return; 
-            if (!history.length) { 
-                l.innerHTML = '<div style="color:' + T.muted + ';font-size:11px;text-align:center;padding:12px;">Пусто</div>'; 
-                return; 
-            } 
-            l.innerHTML = history.slice(0, 10).map(i => `<div style="background:${T.bg};border-radius:8px;padding:6px 8px;margin-bottom:4px;cursor:pointer;border:1px solid ${T.border};font-size:11px;" onclick="document.getElementById('paraphrase-input').value='${i.text.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n')}';showStatus('✅');"><div style="display:flex;justify-content:space-between;color:${T.muted};font-size:9px;margin-bottom:2px;"><span>${i.type}</span><span>${i.date}</span></div><div style="color:${T.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.text.substring(0, 75)}${i.text.length > 75 ? '...' : ''}</div></div>`).join(''); 
-        }
+        document.querySelectorAll('.quick-tone').forEach(b => { b.onclick = function() { const t = document.getElementById('paraphrase-result-text'); if (t && t.textContent && !t.textContent.startsWith('❌')) { document.getElementById('paraphrase-input').value = t.textContent; document.getElementById('paraphrase-style').value = this.dataset.s; document.getElementById('btn-submit').click(); } }; });
+        document.querySelectorAll('.theme-btn').forEach(b => { b.onclick = function() { settings.theme = this.dataset.theme; saveSettings(); showStatus('🎨 Тема изменена'); setTimeout(() => location.reload(), 500); }; });
+        document.getElementById('btn-save-hotkeys').onclick = function() { ['paraphrase', 'retry', 'copyFromChat', 'pasteToChat', 'toggleGreeting', 'quickFriendly', 'quickProfessional', 'quickShort', 'quickPolite'].forEach(f => { const e = document.getElementById('hk-' + f); if (e) settings.hotkeys[f] = e.value || ' '; }); saveSettings(); showStatus('✅ Хоткеи сохранены!'); };
+        document.getElementById('btn-clear-history').onclick = function() { history = []; localStorage.setItem('ozon_crm_history', '[]'); renderHistory(); showStatus('🗑'); };
+        function renderHistory() { const l = document.getElementById('history-list'); if (!l) return; if (!history.length) { l.innerHTML = '<div style="color:' + T.muted + ';font-size:11px;text-align:center;padding:12px;">Пусто</div>'; return; } l.innerHTML = history.slice(0, 10).map(i => `<div style="background:${T.bg};border-radius:8px;padding:6px 8px;margin-bottom:4px;cursor:pointer;border:1px solid ${T.border};font-size:11px;" onclick="document.getElementById('paraphrase-input').value='${i.text.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n')}';showStatus('✅');"><div style="display:flex;justify-content:space-between;color:${T.muted};font-size:9px;margin-bottom:2px;"><span>${i.type}</span><span>${i.date}</span></div><div style="color:${T.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.text.substring(0, 75)}${i.text.length > 75 ? '...' : ''}</div></div>`).join(''); }
 
         // Чат
         const cmsg = document.getElementById('chat-messages'), cinp = document.getElementById('chat-input'), csnd = document.getElementById('chat-send');
-        
-        function acm(r, t) { 
-            chatHistory.push({ role: r, text: t }); 
-            const d = document.createElement('div'); 
-            d.style.cssText = 'margin-bottom:6px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;animation:fadeIn 0.2s ease;'; 
-            if (r === 'user') { 
-                d.style.cssText += 'background:' + T.accent + ';color:#fff;'; 
-                d.innerHTML = t; 
-            } else { 
-                d.style.cssText += 'background:' + T.bg + ';border:1px solid ' + T.border + ';color:' + T.text + ';'; 
-                d.innerHTML = '<div style="color:' + T.accent + ';font-size:10px;margin-bottom:2px;">🤖 ИИ</div>' + t; 
-            } 
-            cmsg.appendChild(d); 
-            cmsg.scrollTop = cmsg.scrollHeight; 
-        }
-
-        function cc() { 
-            cmsg.innerHTML = '<div style="color:' + T.muted + ';text-align:center;padding:30px;">Задайте вопрос 👇</div>'; 
-            chatHistory = []; 
-        }
-
-        csnd.onclick = async function() { 
-            const t = cinp.value.trim(); 
-            if (!t) return; 
-            cinp.value = ''; 
-            acm('user', t); 
-            const ld = document.createElement('div'); 
-            ld.style.cssText = 'color:' + T.accent + ';font-size:11px;padding:8px;'; 
-            ld.textContent = '⏳ ИИ печатает...'; 
-            cmsg.appendChild(ld); 
-            cmsg.scrollTop = cmsg.scrollHeight; 
-            try { 
-                const r = await askAI([{ role: 'system', content: 'Ты полезный помощник.' }, ...chatHistory.filter(m => m.role !== 'system').slice(-10).map(m => ({ role: m.role, content: m.text })), { role: 'user', content: t }]); 
-                ld.remove(); acm('assistant', r); 
-            } catch (e) { 
-                ld.remove(); acm('assistant', '❌ ' + e.message); 
-            } 
-        };
-
+        function acm(r, t) { chatHistory.push({ role: r, text: t }); const d = document.createElement('div'); d.style.cssText = 'margin-bottom:6px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;animation:fadeIn 0.2s ease;'; if (r === 'user') { d.style.cssText += 'background:' + T.accent + ';color:#fff;'; d.innerHTML = t; } else { d.style.cssText += 'background:' + T.bg + ';border:1px solid ' + T.border + ';color:' + T.text + ';'; d.innerHTML = '<div style="color:' + T.accent + ';font-size:10px;margin-bottom:2px;">🤖 ИИ</div>' + t; } cmsg.appendChild(d); cmsg.scrollTop = cmsg.scrollHeight; }
+        function cc() { cmsg.innerHTML = '<div style="color:' + T.muted + ';text-align:center;padding:30px;">Задайте вопрос 👇</div>'; chatHistory = []; }
+        csnd.onclick = async function() { const t = cinp.value.trim(); if (!t) return; cinp.value = ''; acm('user', t); const ld = document.createElement('div'); ld.style.cssText = 'color:' + T.accent + ';font-size:11px;padding:8px;'; ld.textContent = '⏳ ИИ печатает...'; cmsg.appendChild(ld); cmsg.scrollTop = cmsg.scrollHeight; try { const r = await askAI([{ role: 'system', content: 'Ты полезный помощник.' }, ...chatHistory.filter(m => m.role !== 'system').slice(-10).map(m => ({ role: m.role, content: m.text })), { role: 'user', content: t }]); ld.remove(); acm('assistant', r); } catch (e) { ld.remove(); acm('assistant', '❌ ' + e.message); } };
         cinp.addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); csnd.click(); } });
         document.getElementById('chat-clear').onclick = cc;
         document.getElementById('chat-copy-all').onclick = function() { navigator.clipboard.writeText(chatHistory.map(m => `${m.role === 'user' ? 'Вы' : 'ИИ'}: ${m.text}`).join('\n\n')).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
@@ -605,25 +464,14 @@
         // Калькулятор
         let cur = '0', prev = '', op = null, reset = false;
         function upd() { const d = document.getElementById('calc-display'); if (d) d.textContent = cur; }
-        document.querySelectorAll('.calc-btn').forEach(b => { b.onclick = function() { 
-            const v = this.dataset.val; 
-            if (v === 'C') { cur = '0'; prev = ''; op = null; reset = false; } 
-            else if (v === '±') { cur = String(-parseFloat(cur)); } 
-            else if (v === '%') { cur = String(parseFloat(cur) / 100); } 
-            else if (v === '⌫') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; } 
-            else if (['+', '−', '×', '÷'].includes(v)) { if (op && !reset) c(); prev = cur; op = v; reset = true; } 
-            else if (v === '=') { c(); op = null; reset = true; } 
-            else if (v === '.') { if (reset) { cur = '0.'; reset = false; } else if (!cur.includes('.')) cur += '.'; } 
-            else { if (reset) { cur = v; reset = false; } else cur = cur === '0' ? v : cur + v; } 
-            upd(); 
-        }; });
+        document.querySelectorAll('.calc-btn').forEach(b => { b.onclick = function() { const v = this.dataset.val; if (v === 'C') { cur = '0'; prev = ''; op = null; reset = false; } else if (v === '±') { cur = String(-parseFloat(cur)); } else if (v === '%') { cur = String(parseFloat(cur) / 100); } else if (v === '⌫') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; } else if (['+', '−', '×', '÷'].includes(v)) { if (op && !reset) c(); prev = cur; op = v; reset = true; } else if (v === '=') { c(); op = null; reset = true; } else if (v === '.') { if (reset) { cur = '0.'; reset = false; } else if (!cur.includes('.')) cur += '.'; } else { if (reset) { cur = v; reset = false; } else cur = cur === '0' ? v : cur + v; } upd(); }; });
         function c() { if (!op || !prev) return; const a = parseFloat(prev), b = parseFloat(cur); switch (op) { case '+': cur = String(a + b); break; case '−': cur = String(a - b); break; case '×': cur = String(a * b); break; case '÷': cur = b !== 0 ? String(a / b) : 'Ошибка'; break; } if (cur.length > 15) cur = parseFloat(cur).toExponential(5); upd(); }
         document.getElementById('calc-copy').onclick = function() { navigator.clipboard.writeText(cur).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
         document.getElementById('calc-paste').onclick = function() { if (smartPasteToChat(cur)) { this.textContent = '✅'; setTimeout(() => this.textContent = '📩 В чат', 2000); } };
 
-        // Проверка обновлений при запуске
+        // Проверка обновлений
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
-        console.log('✅ Ozon CRM v10.7 — ИСПРАВЛЕНО');
+        console.log('✅ Ozon CRM v10.7 — ВЫДЕЛЕНИЕ + АНАЛИЗ + ИИ');
     }, 1500);
 })();
