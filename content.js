@@ -2,7 +2,7 @@
 // @name         Ozon CRM Мега-помощник
 // @namespace    http://tampermonkey.net/
 // @version      10.8
-// @description  КНОПКИ РАБОТАЮТ
+// @description  КНОПКИ РАБОТАЮТ 100%
 // @author       thatsblake
 // @match        https://crm.o3team.ru/*
 // @grant        none
@@ -20,30 +20,6 @@
     const API_MODEL = 'gpt-4o-mini';
     const SCRIPT_START_TIME = Date.now();
     const VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main/version.txt`;
-
-    // ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
-    let updateVersion = null;
-
-    async function checkUpdates() {
-        try {
-            const r = await fetch(VERSION_URL + '?t=' + Date.now());
-            if (!r.ok) return;
-            const latest = (await r.text()).trim();
-            updateVersion = latest !== CURRENT_VERSION ? latest : null;
-            
-            const old = document.getElementById('check-update-btn');
-            if (updateVersion) {
-                if (old) old.remove();
-                const btn = document.createElement('button');
-                btn.id = 'check-update-btn';
-                btn.textContent = '⬇️';
-                btn.title = 'Доступно обновление ' + updateVersion;
-                btn.style.cssText = `background:#eab308;border:none;color:#fff;cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;animation:blink 1.5s infinite;font-weight:bold;`;
-                btn.onclick = () => window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases/tag/v${updateVersion}`, '_blank');
-                document.getElementById('header-buttons')?.prepend(btn);
-            } else if (old) old.remove();
-        } catch(e) {}
-    }
 
     // ========== ЗАГРУЗКА НАСТРОЕК ==========
     function loadSettings() {
@@ -89,10 +65,10 @@
 
     // ========== ВЫДЕЛЕНИЕ ТЕКСТА ==========
     document.addEventListener('mouseup', function(e) {
-        const oldPopup = document.getElementById('selection-popup');
-        const oldAskPopup = document.getElementById('selection-ask-popup');
-        if (oldPopup) oldPopup.remove();
-        if (oldAskPopup) oldAskPopup.remove();
+        const old1 = document.getElementById('sel-popup-analyze');
+        const old2 = document.getElementById('sel-popup-ask');
+        if (old1) old1.remove();
+        if (old2) old2.remove();
         
         const sel = window.getSelection();
         const text = sel?.toString().trim();
@@ -103,44 +79,66 @@
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         
-        // Кнопка "Анализ"
-        const popup = document.createElement('div');
-        popup.id = 'selection-popup';
-        popup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;border-left:3px solid #6366f1;user-select:none;`;
-        popup.innerHTML = '<span style="font-weight:500;">🔍</span> Анализ';
-        popup.onclick = function(e) {
-            e.stopPropagation();
-            this.remove();
-            const ask = document.getElementById('selection-ask-popup');
-            if (ask) ask.remove();
-            analyzeForTemplate(text);
-        };
-        document.body.appendChild(popup);
+        // Кнопка "Анализ" - onclick прямо тут
+        const btnAnal = document.createElement('div');
+        btnAnal.id = 'sel-popup-analyze';
+        btnAnal.textContent = '🔍 Анализ';
+        btnAnal.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;z-index:9999999;background:#1a1a25;border:1px solid #3a2a3e;border-left:3px solid #6366f1;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f0f0f5;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;user-select:none;`;
         
-        // Кнопка "Спросить ИИ"
+        // Прямой onclick с замыканием на text
+        const capturedText = text;
+        btnAnal.onclick = function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            // Удаляем обе кнопки
+            document.getElementById('sel-popup-analyze')?.remove();
+            document.getElementById('sel-popup-ask')?.remove();
+            
+            // Ищем шаблон
+            const lowerText = capturedText.toLowerCase();
+            const found = settings.templates.find(t => {
+                if (!t.enabled) return false;
+                const n = t.name.toLowerCase();
+                const p = t.prompt.toLowerCase();
+                return lowerText.includes(p) || p.includes(lowerText) || lowerText.includes(n) || n.includes(lowerText);
+            });
+            
+            if (found) {
+                showTemplatePopup(found);
+            } else {
+                showTemplateNotFound(capturedText);
+            }
+        };
+        
+        document.body.appendChild(btnAnal);
+        
+        // Кнопка "Спросить ИИ" - onclick прямо тут
         if (settings.askAIEnabled) {
-            const askPopup = document.createElement('div');
-            askPopup.id = 'selection-ask-popup';
-            askPopup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 85}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;user-select:none;`;
-            askPopup.innerHTML = '<span style="font-weight:500;">🤖</span> Спросить ИИ';
-            askPopup.onclick = function(e) {
+            const btnAsk = document.createElement('div');
+            btnAsk.id = 'sel-popup-ask';
+            btnAsk.textContent = '🤖 Спросить ИИ';
+            btnAsk.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + 85}px;z-index:9999999;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:fadeIn 0.15s ease;white-space:nowrap;font-family:Segoe UI,sans-serif;font-weight:500;user-select:none;`;
+            
+            btnAsk.onclick = function(e) {
                 e.stopPropagation();
-                this.remove();
-                const anal = document.getElementById('selection-popup');
-                if (anal) anal.remove();
-                askAboutSelectedText(text);
+                e.preventDefault();
+                
+                document.getElementById('sel-popup-analyze')?.remove();
+                document.getElementById('sel-popup-ask')?.remove();
+                
+                askAboutSelectedText(capturedText);
             };
-            document.body.appendChild(askPopup);
+            
+            document.body.appendChild(btnAsk);
         }
         
         // Скрытие при клике
         setTimeout(() => {
             const handler = function(event) {
-                if (!event.target?.closest('#selection-popup') && !event.target?.closest('#selection-ask-popup') && !event.target?.closest('#template-popup')) {
-                    const p1 = document.getElementById('selection-popup');
-                    const p2 = document.getElementById('selection-ask-popup');
-                    if (p1) p1.remove();
-                    if (p2) p2.remove();
+                if (!event.target?.id?.includes('sel-popup') && !event.target?.closest('#template-popup')) {
+                    document.getElementById('sel-popup-analyze')?.remove();
+                    document.getElementById('sel-popup-ask')?.remove();
                     document.removeEventListener('mousedown', handler);
                 }
             };
@@ -148,83 +146,59 @@
         }, 10);
     });
 
-    // ========== ФУНКЦИЯ АНАЛИЗА ==========
-    function analyzeForTemplate(text) {
-        const lowerText = text.toLowerCase();
-        const enabledTemplates = settings.templates.filter(t => t.enabled);
-        
-        // Ищем совпадение
-        const found = enabledTemplates.find(t => {
-            const lowerName = t.name.toLowerCase();
-            const lowerPrompt = t.prompt.toLowerCase();
-            
-            return lowerText.includes(lowerPrompt) || 
-                   lowerPrompt.includes(lowerText) ||
-                   lowerText.includes(lowerName) ||
-                   lowerName.includes(lowerText);
-        });
-        
-        if (found) {
-            showTemplatePopup(found);
-        } else {
-            showTemplateNotFound(text);
-        }
-    }
-
-    // ========== ПОПАП С НАЙДЕННЫМ ШАБЛОНОМ ==========
+    // ========== ПОПАП С ШАБЛОНОМ ==========
     function showTemplatePopup(template) {
-        const old = document.getElementById('template-popup');
-        if (old) old.remove();
+        document.getElementById('template-popup')?.remove();
         
-        const T = getThemeColors();
+        const T = themes[settings.theme] || themes.dark;
         
         const popup = document.createElement('div');
         popup.id = 'template-popup';
         popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:380px;z-index:99999999;animation:slideIn 0.3s ease;`;
         popup.innerHTML = `
-            <div style="background:${T.bg2};border:1px solid ${T.border};border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
+            <div style="background:rgba(18,18,26,0.97);backdrop-filter:blur(20px);border:1px solid ${T.border};border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                     <div style="display:flex;align-items:center;gap:8px;">
-                        <div style="width:32px;height:32px;background:linear-gradient(135deg,${T.accent},${T.accent2});border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">✓</div>
+                        <div style="width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">✓</div>
                         <div>
-                            <div style="font-weight:600;font-size:13px;color:${T.text};">Найден шаблон</div>
-                            <div style="color:${T.muted};font-size:11px;">${template.name}</div>
+                            <div style="font-weight:600;font-size:13px;color:#f0f0f5;">Найден шаблон</div>
+                            <div style="color:rgba(255,255,255,0.45);font-size:11px;">${template.name}</div>
                         </div>
                     </div>
-                    <button id="tpl-popup-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;">✕</button>
+                    <button id="tpl-close" style="background:none;border:none;color:rgba(255,255,255,0.35);cursor:pointer;font-size:16px;">✕</button>
                 </div>
-                <div style="background:${T.bg};border:1px solid ${T.border};border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;color:${T.text};max-height:100px;overflow-y:auto;">
+                <div style="background:#0a0a0f;border:1px solid #2a2a3a;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;color:#f0f0f5;max-height:100px;overflow-y:auto;">
                     ${template.template}
                 </div>
                 <div style="display:flex;gap:6px;">
-                    <button id="tpl-popup-copy" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">📋 Скопировать</button>
-                    <button id="tpl-popup-paste" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">📩 Вставить в чат</button>
-                    <button id="tpl-popup-edit" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">✏️</button>
+                    <button id="tpl-copy" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:#1a1a25;border:1px solid #2a2a3a;color:#f0f0f5;">📋 Скопировать</button>
+                    <button id="tpl-paste" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;">📩 Вставить в чат</button>
+                    <button id="tpl-edit" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:#1a1a25;border:1px solid #2a2a3a;color:#f0f0f5;">✏️</button>
                 </div>
             </div>`;
         document.body.appendChild(popup);
         
-        document.getElementById('tpl-popup-close').onclick = () => popup.remove();
-        document.getElementById('tpl-popup-copy').onclick = function() {
+        document.getElementById('tpl-close').onclick = () => popup.remove();
+        document.getElementById('tpl-copy').onclick = function() {
             navigator.clipboard.writeText(template.template);
             this.textContent = '✅';
             setTimeout(() => this.textContent = '📋 Скопировать', 1500);
         };
-        document.getElementById('tpl-popup-paste').onclick = function() {
+        document.getElementById('tpl-paste').onclick = function() {
             const f = document.querySelector('textarea[data-qa-id="chat-dialog.chat.textarea"]');
             if (f) {
                 f.value = template.template;
                 f.dispatchEvent(new Event('input', { bubbles: true }));
                 this.textContent = '✅';
                 setTimeout(() => this.textContent = '📩 Вставить в чат', 1500);
-                setTimeout(() => popup.remove(), 2000);
             }
         };
-        document.getElementById('tpl-popup-edit').onclick = function() {
+        document.getElementById('tpl-edit').onclick = function() {
             popup.remove();
-            document.getElementById('paraphrase-input').value = template.template;
-            const container = document.getElementById('paraphrase-container');
-            if (container && container.style.display === 'none') {
+            const inp = document.getElementById('paraphrase-input');
+            if (inp) inp.value = template.template;
+            const c = document.getElementById('paraphrase-container');
+            if (c && c.style.display === 'none') {
                 document.getElementById('paraphrase-toggle-btn')?.click();
             }
         };
@@ -232,74 +206,74 @@
 
     // ========== ПОПАП "НИЧЕГО НЕ НАЙДЕНО" ==========
     function showTemplateNotFound(text) {
-        const old = document.getElementById('template-popup');
-        if (old) old.remove();
+        document.getElementById('template-popup')?.remove();
         
-        const T = getThemeColors();
+        const T = themes[settings.theme] || themes.dark;
         
         const popup = document.createElement('div');
         popup.id = 'template-popup';
         popup.style.cssText = `position:fixed;bottom:24px;right:24px;width:340px;z-index:99999999;animation:slideIn 0.3s ease;`;
         popup.innerHTML = `
-            <div style="background:${T.bg2};border:1px solid #eab308;border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
+            <div style="background:rgba(18,18,26,0.97);backdrop-filter:blur(20px);border:1px solid #eab308;border-radius:16px;padding:16px;box-shadow:0 25px 60px rgba(0,0,0,0.6);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <div style="width:32px;height:32px;background:#eab308;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">?</div>
                         <div>
-                            <div style="font-weight:600;font-size:13px;color:${T.text};">Ничего не найдено</div>
-                            <div style="color:${T.muted};font-size:11px;">Нет подходящего шаблона</div>
+                            <div style="font-weight:600;font-size:13px;color:#f0f0f5;">Ничего не найдено</div>
+                            <div style="color:rgba(255,255,255,0.45);font-size:11px;">Нет подходящего шаблона</div>
                         </div>
                     </div>
-                    <button id="tpl-popup-close" style="background:none;border:none;color:${T.muted};cursor:pointer;font-size:16px;">✕</button>
+                    <button id="tpl-close" style="background:none;border:none;color:rgba(255,255,255,0.35);cursor:pointer;font-size:16px;">✕</button>
                 </div>
-                <div style="color:${T.muted};font-size:11px;line-height:1.5;margin-bottom:10px;padding:8px;background:${T.bg};border-radius:8px;">
+                <div style="color:rgba(255,255,255,0.55);font-size:11px;line-height:1.5;margin-bottom:10px;padding:8px;background:#0a0a0f;border-radius:8px;">
                     Выделенный текст не совпал ни с одним шаблоном. Вы можете создать новый шаблон или воспользоваться перефразированием.
                 </div>
                 <div style="display:flex;gap:6px;">
-                    <button id="tpl-popup-paraphrase" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,${T.accent},${T.accent2});color:#fff;border:none;">⟳ Перефразировать</button>
-                    <button id="tpl-popup-close-btn" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:${T.card};border:1px solid ${T.border};color:${T.text};">✕ Закрыть</button>
+                    <button id="tpl-paraphrase" style="flex:1;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;">⟳ Перефразировать</button>
+                    <button id="tpl-close-btn" style="flex:0.5;padding:8px;border-radius:8px;font-size:11px;cursor:pointer;background:#1a1a25;border:1px solid #2a2a3a;color:#f0f0f5;">✕ Закрыть</button>
                 </div>
             </div>`;
         document.body.appendChild(popup);
         
-        document.getElementById('tpl-popup-close').onclick = () => popup.remove();
-        document.getElementById('tpl-popup-close-btn').onclick = () => popup.remove();
-        document.getElementById('tpl-popup-paraphrase').onclick = function() {
+        document.getElementById('tpl-close').onclick = () => popup.remove();
+        document.getElementById('tpl-close-btn').onclick = () => popup.remove();
+        document.getElementById('tpl-paraphrase').onclick = function() {
             popup.remove();
-            document.getElementById('paraphrase-input').value = text;
-            const container = document.getElementById('paraphrase-container');
-            if (container && container.style.display === 'none') {
+            const inp = document.getElementById('paraphrase-input');
+            if (inp) inp.value = text;
+            const c = document.getElementById('paraphrase-container');
+            if (c && c.style.display === 'none') {
                 document.getElementById('paraphrase-toggle-btn')?.click();
             }
             setTimeout(() => document.getElementById('btn-submit')?.click(), 300);
         };
     }
 
-    // ========== ФУНКЦИЯ "СПРОСИТЬ ИИ" ==========
+    // ========== "СПРОСИТЬ ИИ" ==========
     function askAboutSelectedText(text) {
-        // Переключаемся в режим чата
-        if (currentMode !== 'chat') {
-            const mt = document.getElementById('mode-toggle');
-            if (mt) mt.click();
+        // Открываем контейнер
+        const container = document.getElementById('paraphrase-container');
+        const toggle = document.getElementById('paraphrase-toggle-btn');
+        if (container && container.style.display === 'none' && toggle) {
+            toggle.click();
+        }
+        
+        // Переключаем в режим чата, если не в чате
+        setTimeout(() => {
+            if (currentMode !== 'chat') {
+                const mt = document.getElementById('mode-toggle');
+                if (mt) mt.click();
+            }
+            
             setTimeout(() => {
-                sendToChat(text);
+                const ci = document.getElementById('chat-input');
+                const cs = document.getElementById('chat-send');
+                if (ci && cs) {
+                    ci.value = 'Проанализируй этот текст и дай рекомендации:\n\n' + text;
+                    cs.click();
+                }
             }, 300);
-        } else {
-            sendToChat(text);
-        }
-    }
-
-    function sendToChat(text) {
-        const chatInput = document.getElementById('chat-input');
-        const chatSend = document.getElementById('chat-send');
-        if (chatInput && chatSend) {
-            chatInput.value = 'Проанализируй этот текст и дай рекомендации:\n\n' + text;
-            chatSend.click();
-        }
-    }
-
-    function getThemeColors() {
-        return themes[settings.theme] || themes.dark;
+        }, 200);
     }
 
     // ========== АНИМАЦИИ ==========
@@ -344,6 +318,29 @@
     function showStatus(msg) { const el = document.getElementById('status-message'); if (!el) return; el.textContent = msg; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 4000); }
     function formatTime(ms) { const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60); return h ? `${h}ч ${m%60}м ${s%60}с` : m ? `${m}м ${s%60}с` : `${s}с`; }
 
+    // ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
+    let updateVersion = null;
+    async function checkUpdates() {
+        try {
+            const r = await fetch(VERSION_URL + '?t=' + Date.now());
+            if (!r.ok) return;
+            const latest = (await r.text()).trim();
+            updateVersion = latest !== CURRENT_VERSION ? latest : null;
+            
+            const old = document.getElementById('check-update-btn');
+            if (updateVersion) {
+                if (old) old.remove();
+                const btn = document.createElement('button');
+                btn.id = 'check-update-btn';
+                btn.textContent = '⬇️';
+                btn.title = 'Доступно обновление ' + updateVersion;
+                btn.style.cssText = `background:#eab308;border:none;color:#fff;cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;animation:blink 1.5s infinite;font-weight:bold;`;
+                btn.onclick = () => window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases/tag/v${updateVersion}`, '_blank');
+                document.getElementById('header-buttons')?.prepend(btn);
+            } else if (old) old.remove();
+        } catch(e) {}
+    }
+
     // ========== СОЗДАНИЕ UI ==========
     setTimeout(() => {
         const T = themes[settings.theme] || themes.dark;
@@ -354,7 +351,6 @@
         container.id = 'paraphrase-container';
         container.style.cssText = `position:fixed;bottom:24px;right:24px;width:420px;max-height:85vh;background:${T.bg2};border:1px solid ${T.border};border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,0.5);z-index:999999;display:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;color:${T.text};flex-direction:column;animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1);`;
 
-        // ШАПКА
         const header = document.createElement('div');
         header.style.cssText = `padding:10px 14px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;flex-shrink:0;border-bottom:1px solid ${T.border};background:${T.bg};`;
         header.innerHTML = `
@@ -375,7 +371,6 @@
                 <button id="main-close" style="background:${T.red};border:none;color:#fff;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;font-weight:bold;">✕</button>
             </div>`;
 
-        // ТЕЛО
         const body = document.createElement('div');
         body.style.cssText = `padding:12px 14px;overflow-y:auto;flex:1;max-height:calc(85vh - 46px);`;
 
@@ -504,7 +499,6 @@
         container.append(header, body);
         document.body.appendChild(container);
 
-        // КНОПКА-КРУЖОК
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'paraphrase-toggle-btn';
         toggleBtn.innerHTML = '✦';
@@ -514,25 +508,16 @@
         toggleBtn.onclick = function() { const v = container.style.display !== 'none'; container.style.display = v ? 'none' : 'block'; toggleBtn.style.display = v ? 'flex' : 'none'; };
         document.body.appendChild(toggleBtn);
 
-        // КНОПКИ
         document.getElementById('main-close').onclick = function() { container.style.display = 'none'; toggleBtn.style.display = 'flex'; };
         let minimized = false;
         document.getElementById('main-minimize').onclick = function() { minimized = !minimized; body.style.display = minimized ? 'none' : 'block'; this.textContent = minimized ? '□' : '—'; };
 
-        document.getElementById('chk-ask-ai').onchange = function() {
-            settings.askAIEnabled = this.checked;
-            saveSettings();
-        };
+        document.getElementById('chk-ask-ai').onchange = function() { settings.askAIEnabled = this.checked; saveSettings(); };
+        document.getElementById('settings-releases-btn').onclick = function() { window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases`, '_blank'); };
 
-        document.getElementById('settings-releases-btn').onclick = function() {
-            window.open(`https://github.com/${GITHUB_USER}/${REPO_NAME}/releases`, '_blank');
-        };
-
-        // ПЕРЕТАСКИВАНИЕ
         let dragging = false, ox, oy;
         header.onmousedown = function(e) { if (e.target.tagName === 'BUTTON') return; dragging = true; ox = e.clientX - container.getBoundingClientRect().left; oy = e.clientY - container.getBoundingClientRect().top; document.onmousemove = function(e) { if (dragging) { container.style.left = (e.clientX - ox) + 'px'; container.style.top = (e.clientY - oy) + 'px'; container.style.right = 'auto'; container.style.bottom = 'auto'; } }; document.onmouseup = function() { dragging = false; document.onmousemove = null; document.onmouseup = null; }; };
 
-        // РЕЖИМЫ
         let calcOpen = false;
         const pm = document.getElementById('paraphrase-mode');
         const cm = document.getElementById('chat-mode');
@@ -547,7 +532,6 @@
         };
         ct.onclick = function() { calcOpen = !calcOpen; if (calcOpen) { pm.style.display = 'none'; cm.style.display = 'none'; cam.style.display = 'block'; ht.textContent = 'Калькулятор'; } else { cam.style.display = 'none'; if (currentMode === 'chat') { cm.style.display = 'block'; ht.textContent = 'Чат с ИИ'; } else { pm.style.display = 'block'; ht.textContent = 'Помощник'; } } };
 
-        // ПАНЕЛИ
         let ap = null;
         document.querySelectorAll('.panel-btn').forEach(b => { b.onclick = function() { const p = this.dataset.p, el = document.getElementById('panel-' + p); if (ap === p) { el.style.display = 'none'; ap = null; } else { document.querySelectorAll('.panel').forEach(x => x.style.display = 'none'); el.style.display = 'block'; ap = p; if (p === 'history') renderHistory(); if (p === 'stats') renderStats(); if (p === 'templates') renderTemplates(); } }; });
 
@@ -575,7 +559,6 @@
         document.getElementById('btn-clear-history').onclick = function() { history = []; localStorage.setItem('ozon_crm_history', '[]'); renderHistory(); showStatus('🗑'); };
         function renderHistory() { const l = document.getElementById('history-list'); if (!l) return; if (!history.length) { l.innerHTML = '<div style="color:' + T.muted + ';font-size:11px;text-align:center;padding:12px;">Пусто</div>'; return; } l.innerHTML = history.slice(0, 10).map(i => `<div style="background:${T.bg};border-radius:8px;padding:6px 8px;margin-bottom:4px;cursor:pointer;border:1px solid ${T.border};font-size:11px;" onclick="document.getElementById('paraphrase-input').value='${i.text.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n')}';showStatus('✅');"><div style="display:flex;justify-content:space-between;color:${T.muted};font-size:9px;margin-bottom:2px;"><span>${i.type}</span><span>${i.date}</span></div><div style="color:${T.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.text.substring(0, 75)}${i.text.length > 75 ? '...' : ''}</div></div>`).join(''); }
 
-        // Чат
         const cmsg = document.getElementById('chat-messages'), cinp = document.getElementById('chat-input'), csnd = document.getElementById('chat-send');
         function acm(r, t) { chatHistory.push({ role: r, text: t }); const d = document.createElement('div'); d.style.cssText = 'margin-bottom:6px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;animation:fadeIn 0.2s ease;'; if (r === 'user') { d.style.cssText += 'background:' + T.accent + ';color:#fff;'; d.innerHTML = t; } else { d.style.cssText += 'background:' + T.bg + ';border:1px solid ' + T.border + ';color:' + T.text + ';'; d.innerHTML = '<div style="color:' + T.accent + ';font-size:10px;margin-bottom:2px;">🤖 ИИ</div>' + t; } cmsg.appendChild(d); cmsg.scrollTop = cmsg.scrollHeight; }
         function cc() { cmsg.innerHTML = '<div style="color:' + T.muted + ';text-align:center;padding:30px;">Задайте вопрос 👇</div>'; chatHistory = []; }
@@ -584,7 +567,6 @@
         document.getElementById('chat-clear').onclick = cc;
         document.getElementById('chat-copy-all').onclick = function() { navigator.clipboard.writeText(chatHistory.map(m => `${m.role === 'user' ? 'Вы' : 'ИИ'}: ${m.text}`).join('\n\n')).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
 
-        // Калькулятор
         let cur = '0', prev = '', op = null, reset = false;
         function upd() { const d = document.getElementById('calc-display'); if (d) d.textContent = cur; }
         document.querySelectorAll('.calc-btn').forEach(b => { b.onclick = function() { const v = this.dataset.val; if (v === 'C') { cur = '0'; prev = ''; op = null; reset = false; } else if (v === '±') { cur = String(-parseFloat(cur)); } else if (v === '%') { cur = String(parseFloat(cur) / 100); } else if (v === '⌫') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; } else if (['+', '−', '×', '÷'].includes(v)) { if (op && !reset) c(); prev = cur; op = v; reset = true; } else if (v === '=') { c(); op = null; reset = true; } else if (v === '.') { if (reset) { cur = '0.'; reset = false; } else if (!cur.includes('.')) cur += '.'; } else { if (reset) { cur = v; reset = false; } else cur = cur === '0' ? v : cur + v; } upd(); }; });
@@ -592,7 +574,6 @@
         document.getElementById('calc-copy').onclick = function() { navigator.clipboard.writeText(cur).then(() => { this.textContent = '✅'; setTimeout(() => this.textContent = '📋 Копировать', 2000); }); };
         document.getElementById('calc-paste').onclick = function() { if (smartPasteToChat(cur)) { this.textContent = '✅'; setTimeout(() => this.textContent = '📩 В чат', 2000); } };
 
-        // Проверка обновлений
         setTimeout(checkUpdates, 5000);
         setInterval(checkUpdates, 3600000);
         console.log('✅ Ozon CRM v10.8');
